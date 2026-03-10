@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+    ports:
+      - "8555:80"
+    environment:
+      - DOCKER_DIR=/docker
+      - DATA_DIR=/data
+      - PORT=3000
+      # - GITHUB_TOKEN=ghp_your_token_here   # optional: raises API limit from 60 to 5000 req/hour
+    volumes:
+      - C:/Program Files/Docker:/docker:ro   # <-- Change this to your actual docker folder
+      - composewatcher_data:/data
+
+volumes:
+  composewatcher_data:

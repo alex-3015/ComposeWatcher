@@ -1,0 +1,31 @@
+{
+  "name": "composewatcher-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "cross-env MOCK=true vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "docker:build": "docker build -t composewatcher:latest -f ../Dockerfile .. && node --input-type=commonjs -e \"require('fs').mkdirSync('../dist',{recursive:true})\" && docker save composewatcher:latest -o ../dist/composewatcher.tar && echo Image saved to dist/composewatcher.tar"
+  },
+  "dependencies": {
+    "lucide-vue-next": "^0.468.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
+    "happy-dom": "^16.7.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8",
+    "vue-tsc": "^2.2.0"
+  }
+}
