@@ -27,7 +27,9 @@ const cardClass = computed(() => {
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -98,7 +100,7 @@ function formatDate(iso: string | null): string {
             v-if="container.releaseUrl"
             :href="container.releaseUrl"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             :class="`flex items-center gap-1 text-xs ${UI.textSecondary} hover:text-white transition-colors`"
           >
             <ExternalLink :size="12" />

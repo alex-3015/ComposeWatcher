@@ -30,12 +30,24 @@ export const DEFAULT_IMAGE_MAPPINGS: Record<string, string> = {
 const REGISTRY_PREFIX_RE = /^(ghcr\.io|lscr\.io|docker\.io|registry\.hub\.docker\.com)\//;
 
 function parseImageVersion(image: string): { image: string; version: string } {
-  const colonIdx = image.lastIndexOf(':');
+  // Handle digest-pinned images: image@sha256:abc...
+  const atIdx = image.indexOf('@');
+  if (atIdx !== -1) {
+    return {
+      image: image.substring(0, atIdx),
+      version: image.substring(atIdx + 1),
+    };
+  }
+
+  // A tag colon can only appear after the last '/' — this avoids confusing
+  // a registry port (registry:5000/owner/repo) with a version tag.
   const slashIdx = image.lastIndexOf('/');
-  const hasVersionTag = colonIdx !== -1 && colonIdx !== slashIdx + 1;
-  if (!hasVersionTag) {
+  const afterSlash = image.substring(slashIdx + 1);
+  const colonInSegment = afterSlash.indexOf(':');
+  if (colonInSegment === -1) {
     return { image, version: 'latest' };
   }
+  const colonIdx = slashIdx + 1 + colonInSegment;
   return {
     image: image.substring(0, colonIdx),
     version: image.substring(colonIdx + 1),
@@ -53,8 +65,12 @@ export function inferGithubRepo(
   imageName: string,
   extraMappings: Record<string, string> = {},
 ): string | null {
+  // Strip digest suffix (@sha256:...)
+  const atIdx = imageName.indexOf('@');
+  const cleanName = atIdx !== -1 ? imageName.substring(0, atIdx) : imageName;
+
   // Strip registry prefix
-  const withoutRegistry = imageName.replace(REGISTRY_PREFIX_RE, '');
+  const withoutRegistry = cleanName.replace(REGISTRY_PREFIX_RE, '');
 
   const mappings = { ...DEFAULT_IMAGE_MAPPINGS, ...extraMappings };
 
@@ -63,7 +79,7 @@ export function inferGithubRepo(
   }
 
   // For ghcr.io images the path IS owner/repo
-  if (imageName.startsWith('ghcr.io/') || imageName.startsWith('lscr.io/')) {
+  if (cleanName.startsWith('ghcr.io/') || cleanName.startsWith('lscr.io/')) {
     const parts = withoutRegistry.split('/');
     if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
   }

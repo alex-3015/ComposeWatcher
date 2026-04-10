@@ -36,7 +36,7 @@ export function loadConfig(): Config {
 
 export function saveConfig(config: Config): void {
   ensureDataDir();
-  const tmpFile = `${CONFIG_FILE}.${process.pid}.tmp`;
+  const tmpFile = `${CONFIG_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2));
   try {
     fs.renameSync(tmpFile, CONFIG_FILE);
@@ -52,7 +52,7 @@ export function saveConfig(config: Config): void {
 
 export function setRepoMapping(containerId: string, repo: string | null): void {
   const config = loadConfig();
-  if (repo === null) {
+  if (repo === null || repo === '') {
     config.repoMappings = Object.fromEntries(
       Object.entries(config.repoMappings).filter(([key]) => key !== containerId),
     );

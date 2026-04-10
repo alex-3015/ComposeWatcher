@@ -278,17 +278,13 @@ describe('scanDockerDir', () => {
     expect(scanDockerDir()).toHaveLength(0);
   });
 
-  it('documents parseImageVersion behaviour for registry:port/owner/repo without tag', () => {
-    // registry:5000/owner/repo — parseImageVersion splits at the FIRST colon (position 8),
-    // not recognising it as a port. This is a known limitation: no tag in this format.
-    // The correct usage is always registry:5000/owner/repo:tag — see the test above.
+  it('correctly handles registry:port/owner/repo without tag', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
     mockFs.readFileSync.mockReturnValue('services:\n  app:\n    image: registry:5000/owner/repo\n');
     const [c] = scanDockerDir();
-    // Current behaviour: splits at first colon → image='registry', version='5000/owner/repo'
-    expect(c.image).toBe('registry');
-    expect(c.currentVersion).toBe('5000/owner/repo');
+    expect(c.image).toBe('registry:5000/owner/repo');
+    expect(c.currentVersion).toBe('latest');
   });
 
   it('recurses correctly into 3-level nested directories', () => {
@@ -317,12 +313,9 @@ describe('scanDockerDir', () => {
 });
 
 describe('inferGithubRepo – additional edge cases', () => {
-  it('returns an imperfect slug for a digest-only image (ghcr.io) — known limitation', () => {
-    // ghcr.io/owner/repo@sha256:abc — after stripping registry: owner/repo@sha256:abc
-    // split('/') = ['owner', 'repo@sha256:abc'] → returns 'owner/repo@sha256:abc'
-    // The returned value contains the digest fragment — not a valid GitHub repo slug
+  it('strips digest suffix and returns clean owner/repo for ghcr.io image', () => {
     const result = inferGithubRepo('ghcr.io/owner/repo@sha256:abcdef1234567890');
-    expect(result).toBe('owner/repo@sha256:abcdef1234567890');
+    expect(result).toBe('owner/repo');
   });
 
   it('returns null for an empty string', () => {

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { X, GitBranch } from 'lucide-vue-next';
 import type { ContainerInfo } from '../types';
 import { UI } from '../theme';
 
 const props = defineProps<{
   container: ContainerInfo;
+  saveError?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -17,7 +18,14 @@ const value = ref(props.container.githubRepo ?? '');
 const saving = ref(false);
 const error = ref('');
 
-const REPO_FORMAT = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
+const REPO_FORMAT = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+watch(() => props.saveError, (err) => {
+  if (err != null) {
+    saving.value = false;
+    error.value = err;
+  }
+});
 
 function handleSave() {
   const trimmed = value.value.trim();

@@ -13,7 +13,7 @@ export const mockContainers: ContainerInfo[] = [
     status: 'up-to-date',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/docker-sonarr/releases/tag/4.0.9',
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
   {
     id: 'radarr/docker-compose.yml::radarr',
@@ -27,7 +27,7 @@ export const mockContainers: ContainerInfo[] = [
     status: 'update-available',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/docker-radarr/releases/tag/5.11.0',
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
   {
     id: 'gitea/docker-compose.yml::gitea',
@@ -41,7 +41,7 @@ export const mockContainers: ContainerInfo[] = [
     status: 'breaking-change',
     breakingChangeReason: 'Major version bump: 1.21.4 → 2.0.0',
     releaseUrl: 'https://github.com/go-gitea/gitea/releases/tag/v2.0.0',
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
   {
     id: 'vaultwarden/docker-compose.yml::vaultwarden',
@@ -55,7 +55,7 @@ export const mockContainers: ContainerInfo[] = [
     status: 'breaking-change',
     breakingChangeReason: 'Release notes mention: "breaking change"',
     releaseUrl: 'https://github.com/dani-garcia/vaultwarden/releases/tag/1.32.7',
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
   {
     id: 'portainer/docker-compose.yml::portainer',
@@ -69,7 +69,7 @@ export const mockContainers: ContainerInfo[] = [
     status: 'unknown',
     breakingChangeReason: null,
     releaseUrl: null,
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
   {
     id: 'myapp/docker-compose.yml::myapp',
@@ -97,7 +97,7 @@ export const mockContainers: ContainerInfo[] = [
     status: 'up-to-date',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/AdguardTeam/AdGuardHome/releases/tag/v0.107.52',
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
   {
     id: 'nextcloud/docker-compose.yml::nextcloud',
@@ -111,6 +111,6 @@ export const mockContainers: ContainerInfo[] = [
     status: 'update-available',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/nextcloud/nextcloud/releases/tag/v30.0.4',
-    lastChecked: new Date().toISOString(),
+    lastChecked: '2025-03-01T12:00:00Z',
   },
 ];

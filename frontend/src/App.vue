@@ -32,6 +32,7 @@ const error = ref<string | null>(null);
 const refreshError = ref<string | null>(null);
 const filter = ref<FilterStatus>('all');
 const modalContainer = ref<ContainerInfo | null>(null);
+const saveError = ref<string | null>(null);
 
 // Tracks the latest request ID to discard stale responses
 let currentRequest = 0;
@@ -68,14 +69,19 @@ async function fetchContainers(forceRefresh = false) {
 }
 
 async function handleSaveRepo(containerId: string, repo: string | null) {
-  const res = await fetch(`/api/containers/${encodeURIComponent(containerId)}/repo`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ repo }),
-  });
-  if (!res.ok) throw new Error('Save failed');
-  modalContainer.value = null;
-  await fetchContainers(true);
+  saveError.value = null;
+  try {
+    const res = await fetch(`/api/containers/${encodeURIComponent(containerId)}/repo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo }),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    modalContainer.value = null;
+    await fetchContainers(true);
+  } catch (e) {
+    saveError.value = e instanceof Error ? e.message : 'Unknown error';
+  }
 }
 
 function countForStatus(status: FilterStatus): number {
@@ -264,7 +270,8 @@ onMounted(() => fetchContainers());
     <RepoModal
       v-if="modalContainer"
       :container="modalContainer"
-      @close="modalContainer = null"
+      :save-error="saveError"
+      @close="modalContainer = null; saveError = null"
       @save="handleSaveRepo"
     />
   </div>

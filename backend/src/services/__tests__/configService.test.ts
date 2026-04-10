@@ -29,7 +29,7 @@ const mockFs = fsDefault as unknown as {
 // Replicate module-level constants (must match configService.ts logic)
 const DATA_DIR = '/data';
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-const TMP_FILE = `${CONFIG_FILE}.${process.pid}.tmp`;
+const TMP_FILE_PATTERN = new RegExp(`^${CONFIG_FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d+\\.\\d+\\.[a-z0-9]+\\.tmp$`);
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -133,10 +133,12 @@ describe('saveConfig', () => {
 
     saveConfig(config);
 
-    // Should write to tmp file first
-    expect(mockFs.writeFileSync).toHaveBeenCalledWith(TMP_FILE, JSON.stringify(config, null, 2));
+    // Should write to tmp file first (with unique suffix)
+    const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
+    expect(writtenPath).toMatch(TMP_FILE_PATTERN);
+    expect(mockFs.writeFileSync).toHaveBeenCalledWith(writtenPath, JSON.stringify(config, null, 2));
     // Then rename to final path
-    expect(mockFs.renameSync).toHaveBeenCalledWith(TMP_FILE, CONFIG_FILE);
+    expect(mockFs.renameSync).toHaveBeenCalledWith(writtenPath, CONFIG_FILE);
   });
 
   it('calls writeFileSync before renameSync', () => {
@@ -180,7 +182,8 @@ describe('saveConfig', () => {
     });
 
     expect(() => saveConfig({ repoMappings: {} })).toThrow('Rename failed');
-    expect(mockFs.unlinkSync).toHaveBeenCalledWith(TMP_FILE);
+    const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
+    expect(mockFs.unlinkSync).toHaveBeenCalledWith(writtenPath);
   });
 
   it('does not throw if tmp file cleanup also fails after rename failure', () => {
@@ -308,13 +311,11 @@ describe('setRepoMapping – edge cases', () => {
     return JSON.parse(calls[calls.length - 1][1]);
   }
 
-  it('stores an empty string repo value without treating it as null', () => {
+  it('treats empty string repo value as null (removes mapping)', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue('{"repoMappings":{}}');
+    mockFs.readFileSync.mockReturnValue('{"repoMappings":{"compose.yml::app":"org/repo"}}');
     setRepoMapping('compose.yml::app', '');
-    // Empty string is truthy-falsy edge: '' is falsy, but repo !== null, so it should be stored
-    // Current behaviour: repo is '' which is not null, so it will be stored as ''
-    expect(getWrittenConfig().repoMappings['compose.yml::app']).toBe('');
+    expect(getWrittenConfig().repoMappings).not.toHaveProperty('compose.yml::app');
   });
 
   it('handles containerId with URL-like characters (encoded slash)', () => {

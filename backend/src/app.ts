@@ -14,6 +14,7 @@ export async function buildApp(opts?: { logger?: boolean }) {
   });
 
   let cache: { data: ContainerInfo[]; ts: number } | null = null;
+  let pendingRefresh: Promise<ContainerInfo[]> | null = null;
   const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS) || 5 * 60 * 1000;
 
   async function getContainers(forceRefresh = false) {
@@ -22,20 +23,31 @@ export async function buildApp(opts?: { logger?: boolean }) {
       return cache.data;
     }
 
-    const config = loadConfig();
-    let containers = scanDockerDir();
+    // Coalesce concurrent refresh requests into a single in-flight call
+    if (pendingRefresh) return pendingRefresh;
 
-    containers = containers.map((c) => ({
-      ...c,
-      githubRepo: config.repoMappings[c.id] ?? c.githubRepo,
-    }));
+    pendingRefresh = (async () => {
+      const config = loadConfig();
+      let containers = scanDockerDir();
 
-    const enriched = await enrichWithGithubData(containers);
-    cache = { data: enriched, ts: now };
-    return enriched;
+      containers = containers.map((c) => ({
+        ...c,
+        githubRepo: config.repoMappings[c.id] ?? c.githubRepo,
+      }));
+
+      const enriched = await enrichWithGithubData(containers);
+      cache = { data: enriched, ts: Date.now() };
+      return enriched;
+    })();
+
+    try {
+      return await pendingRefresh;
+    } finally {
+      pendingRefresh = null;
+    }
   }
 
-  const REPO_REGEX = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
+  const REPO_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
   app.get('/api/containers', async (req, reply) => {
     try {
