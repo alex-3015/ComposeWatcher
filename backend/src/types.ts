@@ -10,6 +10,8 @@ export interface ContainerInfo {
   status: 'up-to-date' | 'update-available' | 'breaking-change' | 'unknown' | 'no-repo';
   breakingChangeReason: string | null;
   releaseUrl: string | null;
+  releaseNotes: string | null;
+  releaseName: string | null;
   lastChecked: string | null;
 }
 

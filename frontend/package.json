@@ -17,10 +17,13 @@
     "docker:build": "docker build -t composewatcher:latest -f ../Dockerfile .. && node --input-type=commonjs -e \"require('fs').mkdirSync('../dist',{recursive:true})\" && docker save composewatcher:latest -o ../dist/composewatcher.tar && echo Image saved to dist/composewatcher.tar"
   },
   "dependencies": {
+    "dompurify": "^3.3.3",
     "lucide-vue-next": "^0.468.0",
+    "marked": "^18.0.0",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@vitejs/plugin-vue": "^6.0.4",
     "@vitest/coverage-v8": "^4.1.4",
     "@vue/test-utils": "^2.4.6",

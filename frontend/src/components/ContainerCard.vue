@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { ExternalLink, GitBranch, AlertTriangle, Package } from 'lucide-vue-next';
 import type { ContainerInfo } from '../types';
 import StatusBadge from './StatusBadge.vue';
+import ReleaseNotes from './ReleaseNotes.vue';
 import { STATUS_THEME, UI } from '../theme';
 
 const props = defineProps<{
@@ -88,6 +89,9 @@ function formatDate(iso: string | null): string {
         {{ container.breakingChangeReason }}
       </p>
     </div>
+
+    <!-- Release Notes -->
+    <ReleaseNotes :release-notes="container.releaseNotes" :release-name="container.releaseName" />
 
     <!-- Footer -->
     <div :class="`flex flex-col gap-1.5 pt-1 border-t ${UI.borderDefault}`">

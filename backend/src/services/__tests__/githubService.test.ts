@@ -26,6 +26,8 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     status: 'unknown',
     breakingChangeReason: null,
     releaseUrl: null,
+    releaseNotes: null,
+    releaseName: null,
     lastChecked: null,
     ...overrides,
   };
@@ -135,6 +137,32 @@ describe('enrichWithGithubData – up-to-date', () => {
     expect(result.releaseUrl).toBe(release.html_url);
     expect(result.lastChecked).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
+  it('sets releaseNotes and releaseName from release data', async () => {
+    const release = makeRelease({
+      tag_name: '4.0.0',
+      body: '## Changes\n- Fixed bugs',
+      name: 'v4.0.0 - Stable',
+    });
+    mockOkResponse(release);
+    const [result] = await enrichWithGithubData([makeContainer({ currentVersion: '4.0.0' })]);
+
+    expect(result.releaseNotes).toBe('## Changes\n- Fixed bugs');
+    expect(result.releaseName).toBe('v4.0.0 - Stable');
+  });
+
+  it('sets releaseNotes and releaseName to null when release body/name are null', async () => {
+    const release = makeRelease({
+      tag_name: '4.0.0',
+      body: null as unknown as string,
+      name: null as unknown as string,
+    });
+    mockOkResponse(release);
+    const [result] = await enrichWithGithubData([makeContainer({ currentVersion: '4.0.0' })]);
+
+    expect(result.releaseNotes).toBeNull();
+    expect(result.releaseName).toBeNull();
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -232,6 +260,8 @@ describe('enrichWithGithubData – API errors', () => {
     const [result] = await enrichWithGithubData([makeContainer()]);
     expect(result.status).toBe('unknown');
     expect(result.lastChecked).toBeTruthy();
+    expect(result.releaseNotes).toBeNull();
+    expect(result.releaseName).toBeNull();
   });
 
   it('sets status "unknown" on non-ok HTTP response (500)', async () => {

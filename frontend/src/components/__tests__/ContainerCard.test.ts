@@ -16,6 +16,8 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     status: 'up-to-date',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.1.0',
+    releaseNotes: null,
+    releaseName: null,
     lastChecked: '2024-06-01T12:00:00Z',
     ...overrides,
   };

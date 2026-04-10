@@ -16,6 +16,8 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     status: 'no-repo',
     breakingChangeReason: null,
     releaseUrl: null,
+    releaseNotes: null,
+    releaseName: null,
     lastChecked: null,
     ...overrides,
   };

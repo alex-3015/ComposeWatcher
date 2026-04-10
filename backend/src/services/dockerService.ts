@@ -156,6 +156,8 @@ export function scanDockerDir(): ContainerInfo[] {
           status: 'unknown',
           breakingChangeReason: null,
           releaseUrl: null,
+          releaseNotes: null,
+          releaseName: null,
           lastChecked: null,
         });
       }

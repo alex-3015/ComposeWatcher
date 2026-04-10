@@ -7,9 +7,10 @@ import {
   AlertTriangle,
   AlertCircle,
   HelpCircle,
+  Search,
 } from 'lucide-vue-next';
 import type { ContainerInfo } from './types';
-import ContainerCard from './components/ContainerCard.vue';
+import ComposeGroup from './components/ComposeGroup.vue';
 import RepoModal from './components/RepoModal.vue';
 import StatCard from './components/StatCard.vue';
 import { STATUS_THEME, UI } from './theme';
@@ -31,8 +32,10 @@ const refreshing = ref(false);
 const error = ref<string | null>(null);
 const refreshError = ref<string | null>(null);
 const filter = ref<FilterStatus>('all');
+const searchQuery = ref('');
 const modalContainer = ref<ContainerInfo | null>(null);
 const saveError = ref<string | null>(null);
+const collapsedGroups = ref<Set<string>>(new Set());
 
 // Tracks the latest request ID to discard stale responses
 let currentRequest = 0;
@@ -105,12 +108,59 @@ const STATUS_ORDER: Record<ContainerInfo['status'], number> = {
 };
 
 const filtered = computed(() => {
-  const list =
+  let list =
     filter.value === 'all'
       ? containers.value
       : containers.value.filter((c) => c.status === filter.value);
+
+  const q = searchQuery.value.trim().toLowerCase();
+  if (q) {
+    list = list.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.image.toLowerCase().includes(q),
+    );
+  }
+
   return [...list].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 });
+
+const grouped = computed(() => {
+  const map = new Map<string, ContainerInfo[]>();
+  for (const c of filtered.value) {
+    const group = map.get(c.composeFile);
+    if (group) {
+      group.push(c);
+    } else {
+      map.set(c.composeFile, [c]);
+    }
+  }
+
+  return [...map.entries()]
+    .map(([composeFile, items]) => ({
+      composeFile,
+      containers: items,
+      counts: {
+        breaking: items.filter((c) => c.status === 'breaking-change').length,
+        updates: items.filter((c) => c.status === 'update-available').length,
+        total: items.length,
+      },
+    }))
+    .sort((a, b) => {
+      const aUrgent = a.counts.breaking + a.counts.updates;
+      const bUrgent = b.counts.breaking + b.counts.updates;
+      if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+      return a.composeFile.localeCompare(b.composeFile);
+    });
+});
+
+function toggleGroup(composeFile: string) {
+  const s = new Set(collapsedGroups.value);
+  if (s.has(composeFile)) {
+    s.delete(composeFile);
+  } else {
+    s.add(composeFile);
+  }
+  collapsedGroups.value = s;
+}
 
 onMounted(() => fetchContainers());
 </script>
@@ -200,6 +250,19 @@ onMounted(() => fetchContainers());
         />
       </div>
 
+      <!-- Search -->
+      <div v-if="!loading && containers.length > 0" class="mb-4">
+        <div class="relative">
+          <Search :size="16" :class="`absolute left-3 top-1/2 -translate-y-1/2 ${UI.textMuted}`" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search containers..."
+            :class="`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${UI.inputBg} border ${UI.borderInput} ${UI.textPrimary} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 transition-colors`"
+          />
+        </div>
+      </div>
+
       <!-- Filters -->
       <div v-if="!loading && containers.length > 0" class="flex flex-wrap gap-2 mb-5">
         <button
@@ -250,17 +313,25 @@ onMounted(() => fetchContainers());
         </p>
       </div>
 
-      <!-- No filter match -->
+      <!-- No filter/search match -->
       <div v-else-if="filtered.length === 0" :class="`text-center py-16 ${UI.textMuted}`">
-        No containers match this filter.
+        {{
+          searchQuery.trim()
+            ? 'No containers match your search.'
+            : 'No containers match this filter.'
+        }}
       </div>
 
-      <!-- Container grid -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <ContainerCard
-          v-for="c in filtered"
-          :key="c.id"
-          :container="c"
+      <!-- Grouped container grid -->
+      <div v-else>
+        <ComposeGroup
+          v-for="group in grouped"
+          :key="group.composeFile"
+          :compose-file="group.composeFile"
+          :containers="group.containers"
+          :counts="group.counts"
+          :expanded="!collapsedGroups.has(group.composeFile)"
+          @toggle="toggleGroup(group.composeFile)"
           @link-repo="modalContainer = $event"
         />
       </div>

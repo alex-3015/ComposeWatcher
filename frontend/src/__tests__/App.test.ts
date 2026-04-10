@@ -23,6 +23,8 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     status: 'up-to-date',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
+    releaseNotes: null,
+    releaseName: null,
     lastChecked: '2024-01-01T00:00:00Z',
     ...overrides,
   };
@@ -59,6 +61,9 @@ const globalStubs = {
     'GitBranch',
     'AlertTriangle',
     'X',
+    'Search',
+    'ChevronDown',
+    'FolderOpen',
   ],
 };
 
@@ -261,6 +266,185 @@ describe('App – filters', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
+// Search
+// ────────────────────────────────────────────────────────────────────────────
+describe('App – search', () => {
+  it('filters containers by name (case-insensitive)', async () => {
+    mockContainersResponse([
+      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'a/docker-compose.yml' }),
+      makeContainer({
+        id: 'b',
+        name: 'radarr',
+        image: 'lscr.io/linuxserver/radarr',
+        composeFile: 'b/docker-compose.yml',
+      }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    const searchInput = w.find('input[placeholder="Search containers..."]');
+    await searchInput.setValue('SONARR');
+    await flushPromises();
+
+    expect(w.text()).toContain('sonarr');
+    expect(w.text()).not.toContain('radarr');
+  });
+
+  it('filters containers by image (case-insensitive)', async () => {
+    mockContainersResponse([
+      makeContainer({
+        id: 'a',
+        name: 'app1',
+        image: 'ghcr.io/linuxserver/sonarr',
+        composeFile: 'a/docker-compose.yml',
+      }),
+      makeContainer({
+        id: 'b',
+        name: 'app2',
+        image: 'gitea/gitea',
+        composeFile: 'b/docker-compose.yml',
+      }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    const searchInput = w.find('input[placeholder="Search containers..."]');
+    await searchInput.setValue('gitea');
+    await flushPromises();
+
+    expect(w.text()).toContain('app2');
+    expect(w.text()).not.toContain('app1');
+  });
+
+  it('shows "No containers match your search" when search has no results', async () => {
+    mockContainersResponse([makeContainer()]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    const searchInput = w.find('input[placeholder="Search containers..."]');
+    await searchInput.setValue('nonexistent');
+    await flushPromises();
+
+    expect(w.text()).toContain('No containers match your search');
+  });
+
+  it('shows all containers when search is cleared', async () => {
+    mockContainersResponse([
+      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'a/docker-compose.yml' }),
+      makeContainer({
+        id: 'b',
+        name: 'radarr',
+        image: 'lscr.io/linuxserver/radarr',
+        composeFile: 'b/docker-compose.yml',
+      }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    const searchInput = w.find('input[placeholder="Search containers..."]');
+    await searchInput.setValue('sonarr');
+    await flushPromises();
+    expect(w.text()).not.toContain('radarr');
+
+    await searchInput.setValue('');
+    await flushPromises();
+    expect(w.text()).toContain('sonarr');
+    expect(w.text()).toContain('radarr');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Grouping
+// ────────────────────────────────────────────────────────────────────────────
+describe('App – grouping', () => {
+  it('groups containers by composeFile', async () => {
+    mockContainersResponse([
+      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'media/docker-compose.yml' }),
+      makeContainer({ id: 'b', name: 'radarr', composeFile: 'media/docker-compose.yml' }),
+      makeContainer({ id: 'c', name: 'gitea', composeFile: 'git/docker-compose.yml' }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    expect(w.text()).toContain('media/docker-compose.yml');
+    expect(w.text()).toContain('git/docker-compose.yml');
+  });
+
+  it('sorts groups with breaking/updates first', async () => {
+    mockContainersResponse([
+      makeContainer({
+        id: 'a',
+        name: 'ok-app',
+        composeFile: 'aaa/docker-compose.yml',
+        status: 'up-to-date',
+      }),
+      makeContainer({
+        id: 'b',
+        name: 'breaker',
+        composeFile: 'zzz/docker-compose.yml',
+        status: 'breaking-change',
+      }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    const text = w.text();
+    // zzz group should come first (has breaking changes)
+    expect(text.indexOf('zzz/docker-compose.yml')).toBeLessThan(
+      text.indexOf('aaa/docker-compose.yml'),
+    );
+  });
+
+  it('can collapse and expand groups', async () => {
+    mockContainersResponse([
+      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'media/docker-compose.yml' }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    // Initially expanded - container name is visible
+    expect(w.text()).toContain('sonarr');
+
+    // Click group header to collapse
+    const groupBtn = w.findAll('button').find((b) => b.text().includes('media/docker-compose.yml'));
+    await groupBtn!.trigger('click');
+
+    // Container should be hidden (v-show=false), but text still in DOM
+    // The group header should still be visible
+    expect(w.text()).toContain('media/docker-compose.yml');
+  });
+
+  it('shows group counts', async () => {
+    mockContainersResponse([
+      makeContainer({
+        id: 'a',
+        name: 'sonarr',
+        composeFile: 'media/docker-compose.yml',
+        status: 'breaking-change',
+      }),
+      makeContainer({
+        id: 'b',
+        name: 'radarr',
+        composeFile: 'media/docker-compose.yml',
+        status: 'update-available',
+      }),
+      makeContainer({
+        id: 'c',
+        name: 'ok',
+        composeFile: 'media/docker-compose.yml',
+        status: 'up-to-date',
+      }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    expect(w.text()).toContain('1 breaking');
+    expect(w.text()).toContain('1 update');
+    expect(w.text()).toContain('3 containers');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
 // Refresh
 // ────────────────────────────────────────────────────────────────────────────
 describe('App – refresh', () => {
@@ -408,9 +592,9 @@ describe('App – repo modal', () => {
     const linkRepoBtn = w.findAll('button').find((b) => b.text().includes('Link repo'));
     await linkRepoBtn!.trigger('click');
 
-    // Set repo value and save
-    const input = w.find('input');
-    await input.setValue('myorg/myapp');
+    // Set repo value and save — find the input inside the modal overlay
+    const modalInput = w.find('.fixed.inset-0 input');
+    await modalInput.setValue('myorg/myapp');
 
     // Mock the POST response and the subsequent GET refresh
     fetchMock.mockResolvedValueOnce({

@@ -115,6 +115,8 @@ export async function enrichWithGithubData(containers: ContainerInfo[]): Promise
         status: breakingChangeReason ? 'breaking-change' : baseStatus,
         breakingChangeReason,
         releaseUrl: release.html_url,
+        releaseNotes: release.body ?? null,
+        releaseName: release.name ?? null,
         lastChecked: new Date().toISOString(),
       });
     } catch (err) {

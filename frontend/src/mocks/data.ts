@@ -2,31 +2,37 @@ import type { ContainerInfo } from '../types';
 
 export const mockContainers: ContainerInfo[] = [
   {
-    id: 'sonarr/docker-compose.yml::sonarr',
+    id: 'media-stack/docker-compose.yml::sonarr',
     name: 'sonarr',
     image: 'lscr.io/linuxserver/sonarr',
     currentVersion: '4.0.9',
-    composeFile: 'sonarr/docker-compose.yml',
+    composeFile: 'media-stack/docker-compose.yml',
     githubRepo: 'linuxserver/docker-sonarr',
     latestVersion: '4.0.9',
     publishedAt: '2024-11-01T10:00:00Z',
     status: 'up-to-date',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/docker-sonarr/releases/tag/4.0.9',
+    releaseNotes:
+      "## What's Changed\n- Fixed RSS sync edge case\n- Improved search performance\n- Updated translations",
+    releaseName: 'v4.0.9',
     lastChecked: '2025-03-01T12:00:00Z',
   },
   {
-    id: 'radarr/docker-compose.yml::radarr',
+    id: 'media-stack/docker-compose.yml::radarr',
     name: 'radarr',
     image: 'lscr.io/linuxserver/radarr',
     currentVersion: '5.2.6',
-    composeFile: 'radarr/docker-compose.yml',
+    composeFile: 'media-stack/docker-compose.yml',
     githubRepo: 'linuxserver/docker-radarr',
     latestVersion: '5.11.0',
     publishedAt: '2025-01-15T08:30:00Z',
     status: 'update-available',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/docker-radarr/releases/tag/5.11.0',
+    releaseNotes:
+      '## New Features\n- Added custom format support for IMAX Enhanced\n- New movie list import from Trakt\n\n## Bug Fixes\n- Fixed manual import not detecting quality\n- Resolved indexer sync timeout issue\n\n## Notes\nPlease update your `/config` volume permissions after upgrade.',
+    releaseName: 'v5.11.0',
     lastChecked: '2025-03-01T12:00:00Z',
   },
   {
@@ -41,6 +47,9 @@ export const mockContainers: ContainerInfo[] = [
     status: 'breaking-change',
     breakingChangeReason: 'Major version bump: 1.21.4 → 2.0.0',
     releaseUrl: 'https://github.com/go-gitea/gitea/releases/tag/v2.0.0',
+    releaseNotes:
+      '## Breaking Changes\n- **Database migration required** — run `gitea migrate` before starting\n- Removed deprecated API endpoints: `/api/v1/repos/search` (use `/api/v1/repos` instead)\n- Minimum Go version is now 1.22\n\n## New Features\n- Gitea Actions is now stable\n- Package registry supports Cargo and Conda\n- New dashboard with activity graphs',
+    releaseName: 'Gitea 2.0.0 — The Big One',
     lastChecked: '2025-03-01T12:00:00Z',
   },
   {
@@ -55,6 +64,9 @@ export const mockContainers: ContainerInfo[] = [
     status: 'breaking-change',
     breakingChangeReason: 'Release notes mention: "breaking change"',
     releaseUrl: 'https://github.com/dani-garcia/vaultwarden/releases/tag/1.32.7',
+    releaseNotes:
+      '## Changes\n- **Breaking change**: `ADMIN_TOKEN` now requires Argon2 hashing — see [wiki](https://github.com/dani-garcia/vaultwarden/wiki)\n- Added emergency access support\n- Improved SMTP configuration validation\n\n```bash\n# Generate new admin token\nvaultwarden hash --preset owasp\n```',
+    releaseName: 'v1.32.7',
     lastChecked: '2025-03-01T12:00:00Z',
   },
   {
@@ -69,6 +81,8 @@ export const mockContainers: ContainerInfo[] = [
     status: 'unknown',
     breakingChangeReason: null,
     releaseUrl: null,
+    releaseNotes: null,
+    releaseName: null,
     lastChecked: '2025-03-01T12:00:00Z',
   },
   {
@@ -83,6 +97,8 @@ export const mockContainers: ContainerInfo[] = [
     status: 'no-repo',
     breakingChangeReason: null,
     releaseUrl: null,
+    releaseNotes: null,
+    releaseName: null,
     lastChecked: null,
   },
   {
@@ -97,6 +113,9 @@ export const mockContainers: ContainerInfo[] = [
     status: 'up-to-date',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/AdguardTeam/AdGuardHome/releases/tag/v0.107.52',
+    releaseNotes:
+      '## Changelog\n- Fixed DNS-over-QUIC stability issues\n- Updated filter lists\n- Minor UI improvements',
+    releaseName: 'AdGuard Home v0.107.52',
     lastChecked: '2025-03-01T12:00:00Z',
   },
   {
@@ -111,6 +130,9 @@ export const mockContainers: ContainerInfo[] = [
     status: 'update-available',
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/nextcloud/nextcloud/releases/tag/v30.0.4',
+    releaseNotes:
+      '## Highlights\n- New AI-powered smart inbox\n- Improved file sharing UX\n- **Performance**: 40% faster file sync\n\n## Upgrade Notes\n1. Back up your data directory\n2. Run `occ upgrade`\n3. Clear caches with `occ maintenance:repair`',
+    releaseName: 'Nextcloud Hub 8 (30.0.4)',
     lastChecked: '2025-03-01T12:00:00Z',
   },
 ];
