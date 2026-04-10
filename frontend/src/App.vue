@@ -271,7 +271,10 @@ onMounted(() => fetchContainers());
       v-if="modalContainer"
       :container="modalContainer"
       :save-error="saveError"
-      @close="modalContainer = null; saveError = null"
+      @close="
+        modalContainer = null;
+        saveError = null;
+      "
       @save="handleSaveRepo"
     />
   </div>

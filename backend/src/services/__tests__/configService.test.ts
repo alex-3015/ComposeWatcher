@@ -29,7 +29,9 @@ const mockFs = fsDefault as unknown as {
 // Replicate module-level constants (must match configService.ts logic)
 const DATA_DIR = '/data';
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-const TMP_FILE_PATTERN = new RegExp(`^${CONFIG_FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d+\\.\\d+\\.[a-z0-9]+\\.tmp$`);
+const TMP_FILE_PATTERN = new RegExp(
+  `^${CONFIG_FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d+\\.\\d+\\.[a-z0-9]+\\.tmp$`,
+);
 
 beforeEach(() => {
   vi.resetAllMocks();

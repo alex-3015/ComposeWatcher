@@ -20,12 +20,15 @@ const error = ref('');
 
 const REPO_FORMAT = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
-watch(() => props.saveError, (err) => {
-  if (err != null) {
-    saving.value = false;
-    error.value = err;
-  }
-});
+watch(
+  () => props.saveError,
+  (err) => {
+    if (err != null) {
+      saving.value = false;
+      error.value = err;
+    }
+  },
+);
 
 function handleSave() {
   const trimmed = value.value.trim();
