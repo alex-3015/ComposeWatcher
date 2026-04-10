@@ -47,10 +47,8 @@ RUN chmod +x /entrypoint.sh
 # Non-root user setup
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Configure nginx for non-root: pid in /tmp, logs to stdout/stderr
-RUN sed -i 's|/run/nginx/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf && \
-    ln -sf /dev/stdout /var/log/nginx/access.log && \
-    ln -sf /dev/stderr /var/log/nginx/error.log
+# Configure nginx for non-root: pid in /tmp
+RUN sed -i 's|/run/nginx/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
 
 # Ensure writable directories for non-root user
 RUN mkdir -p /data /var/tmp/nginx && \
@@ -60,6 +58,10 @@ RUN mkdir -p /data /var/tmp/nginx && \
     chown -R appuser:appgroup /var/log/nginx && \
     chown -R appuser:appgroup /var/tmp/nginx && \
     chown -R appuser:appgroup /usr/share/nginx/html
+
+# Redirect nginx logs to stdout/stderr (after chown, since these are device symlinks)
+RUN ln -sf /dev/stdout /var/log/nginx/access.log && \
+    ln -sf /dev/stderr /var/log/nginx/error.log
 
 EXPOSE 8080
 
