@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
 import ContainerCard from '../ContainerCard.vue';
 import type { ContainerInfo } from '../../types';
@@ -58,7 +58,10 @@ describe('ContainerCard – rendering', () => {
   });
 
   it('shows the linked github repo in the button', () => {
-    const w = mount(ContainerCard, { props: { container: makeContainer({ githubRepo: 'myorg/myapp' }) }, global: { stubs } });
+    const w = mount(ContainerCard, {
+      props: { container: makeContainer({ githubRepo: 'myorg/myapp' }) },
+      global: { stubs },
+    });
     expect(w.text()).toContain('myorg/myapp');
   });
 
@@ -133,7 +136,9 @@ describe('ContainerCard – breaking change warning', () => {
 
   it('hides breaking change banner when status is "breaking-change" but reason is null', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'breaking-change', breakingChangeReason: null }) },
+      props: {
+        container: makeContainer({ status: 'breaking-change', breakingChangeReason: null }),
+      },
       global: { stubs },
     });
     // Banner div should not be present (v-if condition requires both conditions)
@@ -145,7 +150,9 @@ describe('ContainerCard – breaking change warning', () => {
 describe('ContainerCard – card border classes', () => {
   it('applies red border class for "breaking-change" status', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'breaking-change', breakingChangeReason: 'reason' }) },
+      props: {
+        container: makeContainer({ status: 'breaking-change', breakingChangeReason: 'reason' }),
+      },
       global: { stubs },
     });
     expect(w.find('div').classes().join(' ')).toContain('border-red-500/40');
@@ -197,7 +204,13 @@ describe('ContainerCard – events', () => {
 describe('ContainerCard – version highlight', () => {
   it('highlights latest version in amber when update is available', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'update-available', currentVersion: '4.0.0', latestVersion: '4.1.0' }) },
+      props: {
+        container: makeContainer({
+          status: 'update-available',
+          currentVersion: '4.0.0',
+          latestVersion: '4.1.0',
+        }),
+      },
       global: { stubs },
     });
     // The latest version cell should have amber text
@@ -240,7 +253,9 @@ describe('ContainerCard – version highlight', () => {
 
   it('does not highlight latest version for "no-repo" status', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'no-repo', githubRepo: null, latestVersion: null }) },
+      props: {
+        container: makeContainer({ status: 'no-repo', githubRepo: null, latestVersion: null }),
+      },
       global: { stubs },
     });
     expect(w.find('.text-amber-300').exists()).toBe(false);
@@ -260,7 +275,9 @@ describe('ContainerCard – edge cases', () => {
   it('applies amber border class for "breaking-change" (hasUpdate is true)', () => {
     // breaking-change is a superset of "has update" — border should be red (breaking takes priority)
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'breaking-change', breakingChangeReason: 'reason' }) },
+      props: {
+        container: makeContainer({ status: 'breaking-change', breakingChangeReason: 'reason' }),
+      },
       global: { stubs },
     });
     // Red border takes priority over amber for breaking-change

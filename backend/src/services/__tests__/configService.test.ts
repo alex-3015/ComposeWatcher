@@ -91,7 +91,9 @@ describe('loadConfig', () => {
   it('logs error to console.error when readFileSync throws', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockImplementation(() => { throw new Error('Permission denied'); });
+    mockFs.readFileSync.mockImplementation(() => {
+      throw new Error('Permission denied');
+    });
 
     const config = loadConfig();
 
@@ -104,7 +106,9 @@ describe('loadConfig', () => {
 
   it('returns default config when readFileSync throws', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockImplementation(() => { throw new Error('Permission denied'); });
+    mockFs.readFileSync.mockImplementation(() => {
+      throw new Error('Permission denied');
+    });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const config = loadConfig();
     expect(config).toEqual({ repoMappings: {} });
@@ -130,10 +134,7 @@ describe('saveConfig', () => {
     saveConfig(config);
 
     // Should write to tmp file first
-    expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-      TMP_FILE,
-      JSON.stringify(config, null, 2)
-    );
+    expect(mockFs.writeFileSync).toHaveBeenCalledWith(TMP_FILE, JSON.stringify(config, null, 2));
     // Then rename to final path
     expect(mockFs.renameSync).toHaveBeenCalledWith(TMP_FILE, CONFIG_FILE);
   });
@@ -141,8 +142,12 @@ describe('saveConfig', () => {
   it('calls writeFileSync before renameSync', () => {
     mockFs.existsSync.mockReturnValue(true);
     const callOrder: string[] = [];
-    mockFs.writeFileSync.mockImplementation(() => { callOrder.push('write'); });
-    mockFs.renameSync.mockImplementation(() => { callOrder.push('rename'); });
+    mockFs.writeFileSync.mockImplementation(() => {
+      callOrder.push('write');
+    });
+    mockFs.renameSync.mockImplementation(() => {
+      callOrder.push('rename');
+    });
 
     saveConfig({ repoMappings: {} });
 
@@ -170,7 +175,9 @@ describe('saveConfig', () => {
 
   it('cleans up tmp file if renameSync fails', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.renameSync.mockImplementation(() => { throw new Error('Rename failed'); });
+    mockFs.renameSync.mockImplementation(() => {
+      throw new Error('Rename failed');
+    });
 
     expect(() => saveConfig({ repoMappings: {} })).toThrow('Rename failed');
     expect(mockFs.unlinkSync).toHaveBeenCalledWith(TMP_FILE);
@@ -178,8 +185,12 @@ describe('saveConfig', () => {
 
   it('does not throw if tmp file cleanup also fails after rename failure', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.renameSync.mockImplementation(() => { throw new Error('Rename failed'); });
-    mockFs.unlinkSync.mockImplementation(() => { throw new Error('Cleanup failed'); });
+    mockFs.renameSync.mockImplementation(() => {
+      throw new Error('Rename failed');
+    });
+    mockFs.unlinkSync.mockImplementation(() => {
+      throw new Error('Cleanup failed');
+    });
 
     // Should still throw the original rename error, not the cleanup error
     expect(() => saveConfig({ repoMappings: {} })).toThrow('Rename failed');
@@ -187,7 +198,9 @@ describe('saveConfig', () => {
 
   it('propagates error when writeFileSync throws', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.writeFileSync.mockImplementationOnce(() => { throw new Error('Disk full'); });
+    mockFs.writeFileSync.mockImplementationOnce(() => {
+      throw new Error('Disk full');
+    });
     expect(() => saveConfig({ repoMappings: {} })).toThrow('Disk full');
   });
 });
@@ -214,9 +227,7 @@ describe('setRepoMapping', () => {
 
   it('overwrites an existing repo mapping', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(
-      '{"repoMappings":{"compose.yml::app":"old/repo"}}'
-    );
+    mockFs.readFileSync.mockReturnValue('{"repoMappings":{"compose.yml::app":"old/repo"}}');
 
     setRepoMapping('compose.yml::app', 'new/repo');
 
@@ -226,7 +237,7 @@ describe('setRepoMapping', () => {
   it('removes a repo mapping when repo is null', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockReturnValue(
-      '{"repoMappings":{"compose.yml::app":"org/repo","compose.yml::other":"org/other"}}'
+      '{"repoMappings":{"compose.yml::app":"org/repo","compose.yml::other":"org/other"}}',
     );
 
     setRepoMapping('compose.yml::app', null);
@@ -247,9 +258,7 @@ describe('setRepoMapping', () => {
 
   it('preserves existing mappings when adding a new one', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(
-      '{"repoMappings":{"a::existing":"org/existing"}}'
-    );
+    mockFs.readFileSync.mockReturnValue('{"repoMappings":{"a::existing":"org/existing"}}');
 
     setRepoMapping('b::new', 'org/new');
 
@@ -284,7 +293,9 @@ describe('loadConfig – edge cases', () => {
 describe('saveConfig – edge cases', () => {
   it('propagates error when writeFileSync throws (no rename attempted)', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.writeFileSync.mockImplementationOnce(() => { throw new Error('Disk full'); });
+    mockFs.writeFileSync.mockImplementationOnce(() => {
+      throw new Error('Disk full');
+    });
     expect(() => saveConfig({ repoMappings: {} })).toThrow('Disk full');
     // renameSync should not have been called since writeFileSync failed
     expect(mockFs.renameSync).not.toHaveBeenCalled();

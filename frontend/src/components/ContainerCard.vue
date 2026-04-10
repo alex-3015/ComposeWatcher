@@ -14,7 +14,8 @@ const emit = defineEmits<{
 }>();
 
 const hasUpdate = computed(
-  () => props.container.status === 'update-available' || props.container.status === 'breaking-change'
+  () =>
+    props.container.status === 'update-available' || props.container.status === 'breaking-change',
 );
 
 const cardClass = computed(() => {
@@ -26,12 +27,18 @@ const cardClass = computed(() => {
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
 }
 </script>
 
 <template>
-  <div :class="`${UI.cardBg} border rounded-xl p-5 flex flex-col gap-4 transition-all ${cardClass}`">
+  <div
+    :class="`${UI.cardBg} border rounded-xl p-5 flex flex-col gap-4 transition-all ${cardClass}`"
+  >
     <!-- Header -->
     <div class="flex items-start justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0">
@@ -48,11 +55,17 @@ function formatDate(iso: string | null): string {
     <div class="grid grid-cols-2 gap-3">
       <div :class="`${UI.versionBoxBg} rounded-lg px-3 py-2 min-w-0`">
         <p :class="`${UI.textMuted} text-xs mb-0.5`">Current</p>
-        <p :class="`${UI.textPrimary} font-mono text-sm truncate`">{{ container.currentVersion }}</p>
+        <p :class="`${UI.textPrimary} font-mono text-sm truncate`">
+          {{ container.currentVersion }}
+        </p>
       </div>
-      <div :class="`rounded-lg px-3 py-2 min-w-0 ${hasUpdate ? STATUS_THEME['update-available'].bg : UI.versionBoxBg}`">
+      <div
+        :class="`rounded-lg px-3 py-2 min-w-0 ${hasUpdate ? STATUS_THEME['update-available'].bg : UI.versionBoxBg}`"
+      >
         <p :class="`${UI.textMuted} text-xs mb-0.5`">Latest</p>
-        <p :class="`font-mono text-sm truncate ${hasUpdate ? STATUS_THEME['update-available'].textLight : UI.textPrimary}`">
+        <p
+          :class="`font-mono text-sm truncate ${hasUpdate ? STATUS_THEME['update-available'].textLight : UI.textPrimary}`"
+        >
           {{ container.latestVersion ?? '—' }}
         </p>
       </div>
@@ -63,14 +76,23 @@ function formatDate(iso: string | null): string {
       v-if="container.status === 'breaking-change' && container.breakingChangeReason"
       :class="`flex items-start gap-2 ${STATUS_THEME['breaking-change'].bg} border ${STATUS_THEME['breaking-change'].border} rounded-lg px-3 py-2.5`"
     >
-      <AlertTriangle :size="14" :class="`${STATUS_THEME['breaking-change'].text} shrink-0 mt-0.5`" />
-      <p :class="`${STATUS_THEME['breaking-change'].textLight} text-xs leading-relaxed break-words min-w-0`">{{ container.breakingChangeReason }}</p>
+      <AlertTriangle
+        :size="14"
+        :class="`${STATUS_THEME['breaking-change'].text} shrink-0 mt-0.5`"
+      />
+      <p
+        :class="`${STATUS_THEME['breaking-change'].textLight} text-xs leading-relaxed break-words min-w-0`"
+      >
+        {{ container.breakingChangeReason }}
+      </p>
     </div>
 
     <!-- Footer -->
     <div :class="`flex flex-col gap-1.5 pt-1 border-t ${UI.borderDefault}`">
       <div class="flex items-center justify-between gap-2">
-        <p :class="`${UI.textFaint} text-xs font-mono truncate min-w-0`">{{ container.composeFile }}</p>
+        <p :class="`${UI.textFaint} text-xs font-mono truncate min-w-0`">
+          {{ container.composeFile }}
+        </p>
         <div class="flex items-center gap-2 shrink-0">
           <a
             v-if="container.releaseUrl"

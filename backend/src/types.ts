@@ -13,9 +13,7 @@ export interface ContainerInfo {
   lastChecked: string | null;
 }
 
-export interface RepoMapping {
-  [containerId: string]: string; // containerId -> "owner/repo"
-}
+export type RepoMapping = Record<string, string>; // containerId -> "owner/repo"
 
 export interface Config {
   repoMappings: RepoMapping;

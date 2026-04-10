@@ -19,9 +19,9 @@ export const DEFAULT_IMAGE_MAPPINGS: Record<string, string> = {
   'portainer/portainer-ce': 'portainer/portainer',
   'portainer/portainer-ee': 'portainer/portainer',
   'authelia/authelia': 'authelia/authelia',
-  'traefik': 'traefik/traefik',
-  'nginx': 'nginx/nginx',
-  'nextcloud': 'nextcloud/nextcloud',
+  traefik: 'traefik/traefik',
+  nginx: 'nginx/nginx',
+  nextcloud: 'nextcloud/nextcloud',
   'vaultwarden/server': 'dani-garcia/vaultwarden',
   'adguard/adguardhome': 'AdguardTeam/AdGuardHome',
 };
@@ -49,7 +49,10 @@ function parseImageVersion(image: string): { image: string; version: string } {
  *    gitea/gitea                      → go-gitea/gitea
  *    portainer/portainer-ce           → portainer/portainer-ce
  */
-export function inferGithubRepo(imageName: string, extraMappings: Record<string, string> = {}): string | null {
+export function inferGithubRepo(
+  imageName: string,
+  extraMappings: Record<string, string> = {},
+): string | null {
   // Strip registry prefix
   const withoutRegistry = imageName.replace(REGISTRY_PREFIX_RE, '');
 
@@ -74,7 +77,12 @@ export function inferGithubRepo(imageName: string, extraMappings: Record<string,
   return null;
 }
 
-const COMPOSE_FILENAMES = new Set(['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']);
+const COMPOSE_FILENAMES = new Set([
+  'docker-compose.yml',
+  'docker-compose.yaml',
+  'compose.yml',
+  'compose.yaml',
+]);
 
 function findComposeFiles(dir: string): string[] {
   const results: string[] = [];

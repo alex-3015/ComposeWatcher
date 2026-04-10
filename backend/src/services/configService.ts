@@ -53,7 +53,9 @@ export function saveConfig(config: Config): void {
 export function setRepoMapping(containerId: string, repo: string | null): void {
   const config = loadConfig();
   if (repo === null) {
-    delete config.repoMappings[containerId];
+    config.repoMappings = Object.fromEntries(
+      Object.entries(config.repoMappings).filter(([key]) => key !== containerId),
+    );
   } else {
     config.repoMappings[containerId] = repo;
   }

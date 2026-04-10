@@ -22,5 +22,17 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text'],
+      include: ['src/**/*.ts', 'src/**/*.vue'],
+      exclude: ['src/**/__tests__/**', 'src/mocks/**'],
+      thresholds: {
+        branches: 80,
+        functions: 80,
+        lines: 80,
+        statements: 80,
+      },
+    },
   },
 });

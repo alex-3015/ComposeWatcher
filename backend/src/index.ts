@@ -9,9 +9,7 @@ const app = Fastify({ logger: true });
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 await app.register(cors, {
-  origin: CORS_ORIGIN === '*'
-    ? true
-    : CORS_ORIGIN.split(',').map(s => s.trim()),
+  origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(',').map((s) => s.trim()),
 });
 
 let cache: { data: ContainerInfo[]; ts: number } | null = null;
@@ -76,7 +74,7 @@ app.post<{ Params: { id: string }; Body: { repo: string | null } }>(
       req.log.error(err);
       return reply.status(500).send({ error: 'Internal server error' });
     }
-  }
+  },
 );
 
 app.get('/api/config', async (req, reply) => {

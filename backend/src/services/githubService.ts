@@ -38,7 +38,7 @@ async function fetchLatestRelease(owner: string, repo: string): Promise<GithubRe
       throw new Error(`GitHub API error: ${res.status}`);
     }
 
-    return await res.json() as GithubRelease;
+    return (await res.json()) as GithubRelease;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -48,7 +48,11 @@ function normalizeVersion(v: string): string {
   return v.replace(/^v/, '');
 }
 
-function detectBreakingChange(release: GithubRelease, currentVersion: string, latestVersion: string): string | null {
+function detectBreakingChange(
+  release: GithubRelease,
+  currentVersion: string,
+  latestVersion: string,
+): string | null {
   const current = semver.parse(normalizeVersion(currentVersion));
   const latest = semver.parse(normalizeVersion(latestVersion));
 
@@ -79,9 +83,7 @@ function compareVersions(current: string, latest: string): 'up-to-date' | 'updat
   return current === latest ? 'up-to-date' : 'update-available';
 }
 
-export async function enrichWithGithubData(
-  containers: ContainerInfo[]
-): Promise<ContainerInfo[]> {
+export async function enrichWithGithubData(containers: ContainerInfo[]): Promise<ContainerInfo[]> {
   const results: ContainerInfo[] = [];
 
   for (const container of containers) {

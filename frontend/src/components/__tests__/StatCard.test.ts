@@ -4,12 +4,14 @@ import { defineComponent, h, markRaw } from 'vue';
 import StatCard from '../StatCard.vue';
 
 // Simple stub icon component (markRaw prevents Vue reactivity warning)
-const FakeIcon = markRaw(defineComponent({
-  name: 'FakeIcon',
-  render() {
-    return h('svg', { class: 'fake-icon' });
-  },
-}));
+const FakeIcon = markRaw(
+  defineComponent({
+    name: 'FakeIcon',
+    render() {
+      return h('svg', { class: 'fake-icon' });
+    },
+  }),
+);
 
 describe('StatCard', () => {
   it('renders the count', () => {

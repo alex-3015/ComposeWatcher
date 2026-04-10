@@ -209,7 +209,9 @@ describe('enrichWithGithubData – breaking-change (keywords)', () => {
   }
 
   it('detects keyword in release name/title (case-insensitive)', async () => {
-    mockOkResponse(makeRelease({ tag_name: '4.1.0', name: 'Release with Breaking Change', body: '' }));
+    mockOkResponse(
+      makeRelease({ tag_name: '4.1.0', name: 'Release with Breaking Change', body: '' }),
+    );
     const [result] = await enrichWithGithubData([makeContainer({ currentVersion: '4.0.0' })]);
     expect(result.status).toBe('breaking-change');
   });
@@ -276,7 +278,10 @@ describe('enrichWithGithubData – GitHub API request', () => {
       mockOkResponse(makeRelease());
       await enrichWithGithubData([makeContainer()]);
       const [, options] = fetchMock.mock.calls[0];
-      expect((options as RequestInit).headers).toHaveProperty('Authorization', 'Bearer ghp_testtoken123');
+      expect((options as RequestInit).headers).toHaveProperty(
+        'Authorization',
+        'Bearer ghp_testtoken123',
+      );
     } finally {
       if (saved === undefined) {
         delete process.env.GITHUB_TOKEN;
@@ -385,7 +390,9 @@ describe('enrichWithGithubData – null/missing release fields', () => {
   });
 
   it('handles release name being null without crashing', async () => {
-    mockOkResponse(makeRelease({ tag_name: '4.1.0', name: null as unknown as string, body: 'breaking change' }));
+    mockOkResponse(
+      makeRelease({ tag_name: '4.1.0', name: null as unknown as string, body: 'breaking change' }),
+    );
     const [result] = await enrichWithGithubData([makeContainer({ currentVersion: '4.0.0' })]);
     expect(result.status).toBe('breaking-change');
   });
@@ -455,12 +462,13 @@ describe('enrichWithGithubData – timeout / no response', () => {
 
   /** fetch that never resolves but aborts cleanly when signal fires */
   function mockHangingFetch() {
-    fetchMock.mockImplementationOnce((_url: string, options: RequestInit) =>
-      new Promise<never>((_, reject) => {
-        options.signal?.addEventListener('abort', () =>
-          reject(new DOMException('The operation was aborted.', 'AbortError'))
-        );
-      })
+    fetchMock.mockImplementationOnce(
+      (_url: string, options: RequestInit) =>
+        new Promise<never>((_, reject) => {
+          options.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
     );
   }
 
@@ -473,11 +481,11 @@ describe('enrichWithGithubData – timeout / no response', () => {
         json: () =>
           new Promise<never>((_, reject) => {
             options.signal?.addEventListener('abort', () =>
-              reject(new DOMException('The operation was aborted.', 'AbortError'))
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
             );
           }),
         text: () => Promise.resolve(''),
-      })
+      }),
     );
   }
 
@@ -533,18 +541,14 @@ describe('enrichWithGithubData – error classification logging', () => {
     fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'));
     const [result] = await enrichWithGithubData([makeContainer()]);
     expect(result.status).toBe('unknown');
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('timeout')
-    );
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('timeout'));
   });
 
   it('logs "network error" for TypeError', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const [result] = await enrichWithGithubData([makeContainer()]);
     expect(result.status).toBe('unknown');
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('network error')
-    );
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('network error'));
   });
 
   it('logs "API error" with message for generic Error', async () => {
@@ -552,7 +556,7 @@ describe('enrichWithGithubData – error classification logging', () => {
     const [result] = await enrichWithGithubData([makeContainer()]);
     expect(result.status).toBe('unknown');
     expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('API error: Something went wrong')
+      expect.stringContaining('API error: Something went wrong'),
     );
   });
 
@@ -560,8 +564,6 @@ describe('enrichWithGithubData – error classification logging', () => {
     fetchMock.mockRejectedValueOnce('string error');
     const [result] = await enrichWithGithubData([makeContainer()]);
     expect(result.status).toBe('unknown');
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('API error: string error')
-    );
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('API error: string error'));
   });
 });

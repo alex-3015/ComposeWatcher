@@ -141,10 +141,11 @@ describe('scanDockerDir', () => {
   });
 
   it('parses a simple docker-compose.yml with one service', () => {
-    const composePath = path.join(DOCKER_DIR, 'docker-compose.yml');
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
-    mockFs.readFileSync.mockReturnValue('services:\n  sonarr:\n    image: ghcr.io/linuxserver/sonarr:4.0.0\n');
+    mockFs.readFileSync.mockReturnValue(
+      'services:\n  sonarr:\n    image: ghcr.io/linuxserver/sonarr:4.0.0\n',
+    );
 
     const result = scanDockerDir();
 
@@ -181,7 +182,7 @@ describe('scanDockerDir', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
     mockFs.readFileSync.mockReturnValue(
-      'services:\n  sonarr:\n    image: sonarr:4.0\n  radarr:\n    image: radarr:5.0\n'
+      'services:\n  sonarr:\n    image: sonarr:4.0\n  radarr:\n    image: radarr:5.0\n',
     );
 
     const result = scanDockerDir();
@@ -213,15 +214,16 @@ describe('scanDockerDir', () => {
 
   it('ignores files that are not compose files', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml.bak'), mockFile('compose.txt')]);
+    mockFs.readdirSync.mockReturnValue([
+      mockFile('docker-compose.yml.bak'),
+      mockFile('compose.txt'),
+    ]);
 
     expect(scanDockerDir()).toHaveLength(0);
   });
 
   it('recurses into subdirectories', () => {
     const subDir = path.join(DOCKER_DIR, 'sonarr');
-    const composePath = path.join(subDir, 'docker-compose.yml');
-
     mockFs.existsSync.mockImplementation((p) => p === DOCKER_DIR || p === subDir);
     mockFs.readdirSync.mockImplementation((p) => {
       if (p === DOCKER_DIR) return [mockDir('sonarr')];
@@ -237,10 +239,7 @@ describe('scanDockerDir', () => {
 
   it('skips compose files with invalid YAML and continues', () => {
     mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockReturnValue([
-      mockFile('docker-compose.yml'),
-      mockFile('compose.yml'),
-    ]);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml'), mockFile('compose.yml')]);
     mockFs.readFileSync
       .mockReturnValueOnce(': invalid: yaml: [[[')
       .mockReturnValueOnce('services:\n  app:\n    image: myapp:1.0\n');
@@ -263,7 +262,7 @@ describe('scanDockerDir', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
     mockFs.readFileSync.mockReturnValue(
-      'services:\n  app:\n    image: registry:5000/owner/repo:v1.2.3\n'
+      'services:\n  app:\n    image: registry:5000/owner/repo:v1.2.3\n',
     );
 
     const [c] = scanDockerDir();
@@ -285,9 +284,7 @@ describe('scanDockerDir', () => {
     // The correct usage is always registry:5000/owner/repo:tag — see the test above.
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
-    mockFs.readFileSync.mockReturnValue(
-      'services:\n  app:\n    image: registry:5000/owner/repo\n'
-    );
+    mockFs.readFileSync.mockReturnValue('services:\n  app:\n    image: registry:5000/owner/repo\n');
     const [c] = scanDockerDir();
     // Current behaviour: splits at first colon → image='registry', version='5000/owner/repo'
     expect(c.image).toBe('registry');
@@ -297,8 +294,6 @@ describe('scanDockerDir', () => {
   it('recurses correctly into 3-level nested directories', () => {
     const l1 = path.join(DOCKER_DIR, 'media');
     const l2 = path.join(l1, 'arr');
-    const composePath = path.join(l2, 'docker-compose.yml');
-
     mockFs.existsSync.mockImplementation((p) => [DOCKER_DIR, l1, l2].includes(p as string));
     mockFs.readdirSync.mockImplementation((p) => {
       if (p === DOCKER_DIR) return [mockDir('media')];
@@ -344,7 +339,7 @@ describe('inferGithubRepo – additional edge cases', () => {
 // ────────────────────────────────────────────────────────────────────────────
 describe('inferGithubRepo – extraMappings', () => {
   it('uses extraMappings to resolve an image that has no default mapping', () => {
-    const extra = { 'mycustomimg': 'myorg/mycustomrepo' };
+    const extra = { mycustomimg: 'myorg/mycustomrepo' };
     expect(inferGithubRepo('mycustomimg', extra)).toBe('myorg/mycustomrepo');
   });
 
@@ -386,7 +381,7 @@ describe('scanDockerDir – YAML validation', () => {
 
     expect(scanDockerDir()).toHaveLength(0);
     expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('invalid compose file structure')
+      expect.stringContaining('invalid compose file structure'),
     );
   });
 
@@ -405,8 +400,6 @@ describe('scanDockerDir – YAML validation', () => {
 
     scanDockerDir();
 
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringMatching(/^Skipping .+: .+/)
-    );
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/^Skipping .+: .+/));
   });
 });

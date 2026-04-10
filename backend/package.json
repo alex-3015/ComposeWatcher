@@ -7,7 +7,12 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --check \"src/**/*.ts\"",
+    "format:fix": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
@@ -19,8 +24,13 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.0",
     "@types/semver": "^7.5.8",
+    "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.58.1",
     "vitest": "^4.0.18"
   }
 }

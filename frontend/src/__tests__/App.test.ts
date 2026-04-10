@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import App from '../App.vue';
 import type { ContainerInfo } from '../types';
@@ -48,8 +48,17 @@ function mockErrorResponse() {
 
 const globalStubs = {
   stubs: [
-    'Container', 'RefreshCw', 'CheckCircle', 'AlertTriangle', 'AlertCircle', 'HelpCircle',
-    'Package', 'ExternalLink', 'GitBranch', 'AlertTriangle', 'X',
+    'Container',
+    'RefreshCw',
+    'CheckCircle',
+    'AlertTriangle',
+    'AlertCircle',
+    'HelpCircle',
+    'Package',
+    'ExternalLink',
+    'GitBranch',
+    'AlertTriangle',
+    'X',
   ],
 };
 
@@ -194,7 +203,7 @@ describe('App – filters', () => {
       makeContainer({ id: 'a', name: 'breaker', status: 'breaking-change' }),
       makeContainer({ id: 'b', name: 'updater', status: 'update-available' }),
       makeContainer({ id: 'c', name: 'current', status: 'up-to-date' }),
-      makeContainer({ id: 'd', name: 'norepo',  status: 'no-repo' }),
+      makeContainer({ id: 'd', name: 'norepo', status: 'no-repo' }),
       makeContainer({ id: 'e', name: 'mystery', status: 'unknown' }),
     ]);
     const w = mount(App, { global: globalStubs });
@@ -272,7 +281,7 @@ describe('App – refresh', () => {
 
   it('initial load does NOT include ?refresh=true', async () => {
     mockContainersResponse([]);
-    const w = mount(App, { global: globalStubs });
+    mount(App, { global: globalStubs });
     await flushPromises();
 
     const [firstUrl] = fetchMock.mock.calls[0];
@@ -288,7 +297,7 @@ describe('App – card sort order', () => {
     // Provide in reverse order to verify sorting is applied
     mockContainersResponse([
       makeContainer({ id: 'e', name: 'mystery', status: 'unknown' }),
-      makeContainer({ id: 'd', name: 'norepo',  status: 'no-repo' }),
+      makeContainer({ id: 'd', name: 'norepo', status: 'no-repo' }),
       makeContainer({ id: 'c', name: 'current', status: 'up-to-date' }),
       makeContainer({ id: 'b', name: 'updater', status: 'update-available' }),
       makeContainer({ id: 'a', name: 'breaker', status: 'breaking-change' }),
@@ -301,7 +310,7 @@ describe('App – card sort order', () => {
       breaker: text.indexOf('breaker'),
       updater: text.indexOf('updater'),
       current: text.indexOf('current'),
-      norepo:  text.indexOf('norepo'),
+      norepo: text.indexOf('norepo'),
       mystery: text.indexOf('mystery'),
     };
 
@@ -315,7 +324,7 @@ describe('App – card sort order', () => {
     // Two update-available containers — order within same status is stable (insertion order)
     mockContainersResponse([
       makeContainer({ id: 'b', name: 'second', status: 'update-available' }),
-      makeContainer({ id: 'a', name: 'first',  status: 'update-available' }),
+      makeContainer({ id: 'a', name: 'first', status: 'update-available' }),
     ]);
     const w = mount(App, { global: globalStubs });
     await flushPromises();
@@ -404,7 +413,12 @@ describe('App – repo modal', () => {
     await input.setValue('myorg/myapp');
 
     // Mock the POST response and the subsequent GET refresh
-    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }), text: () => Promise.resolve('') });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ ok: true }),
+      text: () => Promise.resolve(''),
+    });
     mockContainersResponse([makeContainer({ githubRepo: 'myorg/myapp', status: 'unknown' })]);
 
     const saveBtn = w.findAll('button').find((b) => b.text() === 'Save');
@@ -412,8 +426,9 @@ describe('App – repo modal', () => {
     await flushPromises();
 
     // POST to /api/containers/:id/repo
-    const postCall = fetchMock.mock.calls.find(([url, opts]) =>
-      (url as string).includes('/api/containers') && (opts as RequestInit)?.method === 'POST'
+    const postCall = fetchMock.mock.calls.find(
+      ([url, opts]) =>
+        (url as string).includes('/api/containers') && (opts as RequestInit)?.method === 'POST',
     );
     expect(postCall).toBeTruthy();
     const [, postOpts] = postCall!;

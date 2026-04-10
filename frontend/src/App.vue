@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { RefreshCw, Container, CheckCircle, AlertTriangle, AlertCircle, HelpCircle } from 'lucide-vue-next';
+import {
+  RefreshCw,
+  Container,
+  CheckCircle,
+  AlertTriangle,
+  AlertCircle,
+  HelpCircle,
+} from 'lucide-vue-next';
 import type { ContainerInfo } from './types';
 import ContainerCard from './components/ContainerCard.vue';
 import RepoModal from './components/RepoModal.vue';
@@ -88,7 +95,7 @@ const STATUS_ORDER: Record<ContainerInfo['status'], number> = {
   'update-available': 1,
   'up-to-date': 2,
   'no-repo': 3,
-  'unknown': 4,
+  unknown: 4,
 };
 
 const filtered = computed(() => {
@@ -105,14 +112,18 @@ onMounted(() => fetchContainers());
 <template>
   <div :class="`min-h-screen ${UI.pageBg} text-gray-100`">
     <!-- Header -->
-    <header :class="`border-b ${UI.borderDefault} bg-gray-900/50 sticky top-0 z-10 backdrop-blur-sm`">
+    <header
+      :class="`border-b ${UI.borderDefault} bg-gray-900/50 sticky top-0 z-10 backdrop-blur-sm`"
+    >
       <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="p-2 bg-blue-600/20 rounded-lg">
             <Container :size="20" :class="UI.primaryText" />
           </div>
           <div>
-            <h1 :class="`text-base font-semibold ${UI.textPrimary} leading-none`">Compose Watcher</h1>
+            <h1 :class="`text-base font-semibold ${UI.textPrimary} leading-none`">
+              Compose Watcher
+            </h1>
             <p :class="`${UI.textMuted} text-xs mt-0.5`">
               {{ containers.length }} container{{ containers.length !== 1 ? 's' : '' }} found
             </p>
@@ -136,11 +147,19 @@ onMounted(() => fetchContainers());
         :class="`${UI.errorBg} border ${UI.errorBorder} rounded-xl px-4 py-3 mb-5 flex items-center justify-between gap-4`"
       >
         <p :class="`${UI.errorText} text-sm`">Refresh failed: {{ refreshError }}</p>
-        <button :class="`${UI.errorText} ${UI.errorTextHover} text-sm shrink-0`" @click="refreshError = null">Dismiss</button>
+        <button
+          :class="`${UI.errorText} ${UI.errorTextHover} text-sm shrink-0`"
+          @click="refreshError = null"
+        >
+          Dismiss
+        </button>
       </div>
 
       <!-- Stats -->
-      <div v-if="!loading && containers.length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div
+        v-if="!loading && containers.length > 0"
+        class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6"
+      >
         <StatCard
           :icon="AlertCircle"
           :count="counts.breaking"
@@ -208,7 +227,10 @@ onMounted(() => fetchContainers());
       >
         <p :class="`${UI.errorText} font-medium`">Error loading containers</p>
         <p class="text-red-300/70 text-sm mt-1">{{ error }}</p>
-        <button :class="`mt-4 text-sm ${UI.errorText} ${UI.errorTextHover} underline`" @click="fetchContainers()">
+        <button
+          :class="`mt-4 text-sm ${UI.errorText} ${UI.errorTextHover} underline`"
+          @click="fetchContainers()"
+        >
           Try again
         </button>
       </div>
@@ -217,7 +239,9 @@ onMounted(() => fetchContainers());
       <div v-else-if="containers.length === 0" :class="`text-center py-24 ${UI.textMuted}`">
         <Container :size="40" class="mx-auto mb-3 opacity-30" />
         <p>No containers found.</p>
-        <p class="text-sm mt-1">Make sure the /docker directory is mounted and contains docker-compose files.</p>
+        <p class="text-sm mt-1">
+          Make sure the /docker directory is mounted and contains docker-compose files.
+        </p>
       </div>
 
       <!-- No filter match -->

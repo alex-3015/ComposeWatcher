@@ -37,7 +37,9 @@ function handleRemove() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-    <div :class="`${UI.cardBg} border ${UI.borderSubtle} rounded-xl shadow-2xl w-full max-w-md mx-4 p-6`">
+    <div
+      :class="`${UI.cardBg} border ${UI.borderSubtle} rounded-xl shadow-2xl w-full max-w-md mx-4 p-6`"
+    >
       <!-- Title -->
       <div class="flex items-center justify-between mb-5">
         <div class="flex items-center gap-2">
@@ -52,7 +54,9 @@ function handleRemove() {
       <!-- Container info -->
       <div class="mb-4">
         <p :class="`text-sm ${UI.textSecondary} mb-1`">Container</p>
-        <p :class="`${UI.textPrimary} font-mono text-sm ${UI.inputBg} rounded-lg px-3 py-2`">{{ container.name }}</p>
+        <p :class="`${UI.textPrimary} font-mono text-sm ${UI.inputBg} rounded-lg px-3 py-2`">
+          {{ container.name }}
+        </p>
         <p :class="`${UI.textMuted} font-mono text-xs mt-1`">{{ container.image }}</p>
       </div>
 
