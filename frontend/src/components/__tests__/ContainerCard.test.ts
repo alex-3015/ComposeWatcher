@@ -25,6 +25,46 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
 
 const stubs = ['Package', 'ExternalLink', 'GitBranch', 'AlertTriangle'];
 
+describe('ContainerCard – icon', () => {
+  it('renders an <img> with the correct selfh.st icon URL', () => {
+    const w = mount(ContainerCard, {
+      props: { container: makeContainer({ name: 'sonarr' }) },
+      global: { stubs },
+    });
+    const img = w.find('img');
+    expect(img.exists()).toBe(true);
+    expect(img.attributes('src')).toBe(
+      'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/sonarr.png',
+    );
+    expect(img.attributes('alt')).toBe('sonarr');
+  });
+
+  it('falls back to Package icon when image fails to load', async () => {
+    const w = mount(ContainerCard, {
+      props: { container: makeContainer({ name: 'sonarr' }) },
+      global: { stubs },
+    });
+    expect(w.find('img').exists()).toBe(true);
+
+    await w.find('img').trigger('error');
+    await w.vm.$nextTick();
+
+    expect(w.find('img').exists()).toBe(false);
+    // Package stub should now be rendered as fallback
+    expect(w.html()).toContain('package');
+  });
+
+  it('uses mapped icon name for known aliases', () => {
+    const w = mount(ContainerCard, {
+      props: { container: makeContainer({ name: 'adguardhome' }) },
+      global: { stubs },
+    });
+    expect(w.find('img').attributes('src')).toBe(
+      'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/adguard-home.png',
+    );
+  });
+});
+
 describe('ContainerCard – rendering', () => {
   it('displays the container name', () => {
     const w = mount(ContainerCard, { props: { container: makeContainer() }, global: { stubs } });

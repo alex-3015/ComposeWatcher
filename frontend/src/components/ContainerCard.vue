@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { ExternalLink, GitBranch, AlertTriangle, Package } from 'lucide-vue-next';
 import type { ContainerInfo } from '../types';
 import StatusBadge from './StatusBadge.vue';
 import ReleaseNotes from './ReleaseNotes.vue';
 import { STATUS_THEME, UI } from '../theme';
+import { getContainerIconUrl } from '../iconMap';
 
 const props = defineProps<{
   container: ContainerInfo;
@@ -13,6 +14,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   linkRepo: [container: ContainerInfo];
 }>();
+
+const iconFailed = ref(false);
+const iconUrl = computed(() => getContainerIconUrl(props.container.name));
 
 const hasUpdate = computed(
   () =>
@@ -45,7 +49,14 @@ function formatDate(iso: string | null): string {
     <!-- Header -->
     <div class="flex items-start justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0">
-        <Package :size="16" :class="`${UI.textSecondary} shrink-0`" />
+        <img
+          v-if="!iconFailed"
+          :src="iconUrl"
+          :alt="container.name"
+          class="w-5 h-5 shrink-0 rounded"
+          @error="iconFailed = true"
+        />
+        <Package v-else :size="16" :class="`${UI.textSecondary} shrink-0`" />
         <div class="min-w-0">
           <h3 :class="`${UI.textPrimary} font-semibold truncate`">{{ container.name }}</h3>
           <p :class="`${UI.textMuted} text-xs font-mono truncate`">{{ container.image }}</p>
