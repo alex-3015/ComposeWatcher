@@ -35,16 +35,10 @@ async function fetchLatestRelease(owner: string, repo: string): Promise<GithubRe
 
     if (res.status === 404) return null;
     if (!res.ok) {
-      const msg = await res.text();
-      throw new Error(`GitHub API error ${res.status}: ${msg}`);
+      throw new Error(`GitHub API error: ${res.status}`);
     }
 
-    const abortPromise = new Promise<never>((_, reject) => {
-      controller.signal.addEventListener('abort', () =>
-        reject(new DOMException('Aborted', 'AbortError')), { once: true }
-      );
-    });
-    return await Promise.race([res.json() as Promise<GithubRelease>, abortPromise]);
+    return await res.json() as GithubRelease;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -122,7 +116,15 @@ export async function enrichWithGithubData(
         lastChecked: new Date().toISOString(),
       });
     } catch (err) {
-      console.error(`Failed to fetch GitHub data for ${container.githubRepo}:`, err);
+      let errorType: string;
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        errorType = 'timeout';
+      } else if (err instanceof TypeError) {
+        errorType = 'network error';
+      } else {
+        errorType = `API error: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      console.warn(`GitHub fetch failed for ${container.githubRepo}: ${errorType}`);
       results.push({ ...container, status: 'unknown', lastChecked: new Date().toISOString() });
     }
   }

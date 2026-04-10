@@ -19,19 +19,14 @@ const error = ref('');
 
 const REPO_FORMAT = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 
-async function handleSave() {
+function handleSave() {
   const trimmed = value.value.trim();
   if (trimmed && !REPO_FORMAT.test(trimmed)) {
     error.value = 'Format: owner/repository';
     return;
   }
   saving.value = true;
-  try {
-    emit('save', props.container.id, trimmed || null);
-  } catch {
-    error.value = 'Failed to save. Try again.';
-    saving.value = false;
-  }
+  emit('save', props.container.id, trimmed || null);
 }
 
 function handleRemove() {

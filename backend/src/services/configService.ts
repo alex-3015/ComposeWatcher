@@ -5,10 +5,19 @@ import type { Config } from '../types.js';
 const DATA_DIR = process.env.DATA_DIR ?? '/data';
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 
+let dataDirEnsured = false;
+
 function ensureDataDir() {
+  if (dataDirEnsured) return;
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  dataDirEnsured = true;
+}
+
+/** Reset the ensureDataDir cache — useful for testing. */
+export function resetDataDirCache(): void {
+  dataDirEnsured = false;
 }
 
 export function loadConfig(): Config {
@@ -19,14 +28,26 @@ export function loadConfig(): Config {
   try {
     const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
     return { repoMappings: {}, ...parsed };
-  } catch {
+  } catch (err) {
+    console.error('Failed to load config:', err);
     return { repoMappings: {} };
   }
 }
 
 export function saveConfig(config: Config): void {
   ensureDataDir();
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  const tmpFile = `${CONFIG_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2));
+  try {
+    fs.renameSync(tmpFile, CONFIG_FILE);
+  } catch (renameErr) {
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {
+      // ignore cleanup errors
+    }
+    throw renameErr;
+  }
 }
 
 export function setRepoMapping(containerId: string, repo: string | null): void {

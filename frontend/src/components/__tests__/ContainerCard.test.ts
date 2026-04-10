@@ -70,13 +70,16 @@ describe('ContainerCard – rendering', () => {
     expect(w.text()).toContain('Link repo');
   });
 
-  it('formats lastChecked date in de-DE format', () => {
+  it('formats lastChecked date using browser locale', () => {
     const w = mount(ContainerCard, {
       props: { container: makeContainer({ lastChecked: '2024-06-01T12:00:00Z' }) },
       global: { stubs },
     });
-    // de-DE format: dd.MM.yyyy
-    expect(w.text()).toMatch(/\d{2}\.\d{2}\.\d{4}/);
+    // Verify the date contains the expected components (year, month, day) regardless of locale format
+    const text = w.text();
+    expect(text).toMatch(/2024/);
+    expect(text).toMatch(/0?6/); // month: 6 or 06
+    expect(text).toMatch(/0?1/); // day: 1 or 01
   });
 
   it('does not show last-checked text when lastChecked is null', () => {

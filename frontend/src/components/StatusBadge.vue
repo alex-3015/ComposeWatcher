@@ -1,17 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { ContainerInfo } from '../types';
 import { STATUS_THEME } from '../theme';
 
 const props = defineProps<{ status: ContainerInfo['status'] }>();
+
+const theme = computed(() => STATUS_THEME[props.status] ?? STATUS_THEME['unknown']);
 </script>
 
 <template>
   <span
     :class="`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border
-      ${STATUS_THEME[props.status].bgBadge}
-      ${STATUS_THEME[props.status].text}
-      ${STATUS_THEME[props.status].borderBadge}`"
+      ${theme.bgBadge}
+      ${theme.text}
+      ${theme.borderBadge}`"
   >
-    {{ STATUS_THEME[props.status].badgeLabel }}
+    {{ theme.badgeLabel }}
   </span>
 </template>

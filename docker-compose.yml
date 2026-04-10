@@ -5,7 +5,7 @@ services:
       target: app
     restart: unless-stopped
     ports:
-      - "8555:80"
+      - "8555:8080"
     environment:
       - DOCKER_DIR=/docker
       - DATA_DIR=/data

@@ -1,0 +1,6 @@
+.git
+.idea
+.claude
+dist
+node_modules
+*.tar

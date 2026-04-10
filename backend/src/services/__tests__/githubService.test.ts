@@ -6,7 +6,10 @@ import { enrichWithGithubData } from '../githubService.js';
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
-beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}));
+beforeEach(() => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
 afterEach(() => vi.clearAllMocks());
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -519,5 +522,46 @@ describe('enrichWithGithubData – timeout / no response', () => {
     const result = await promise;
     expect(result[0].status).toBe('unknown');
     expect(result[1].status).toBe('up-to-date');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Error classification in enrichWithGithubData
+// ────────────────────────────────────────────────────────────────────────────
+describe('enrichWithGithubData – error classification logging', () => {
+  it('logs "timeout" for AbortError', async () => {
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'));
+    const [result] = await enrichWithGithubData([makeContainer()]);
+    expect(result.status).toBe('unknown');
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('timeout')
+    );
+  });
+
+  it('logs "network error" for TypeError', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const [result] = await enrichWithGithubData([makeContainer()]);
+    expect(result.status).toBe('unknown');
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('network error')
+    );
+  });
+
+  it('logs "API error" with message for generic Error', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('Something went wrong'));
+    const [result] = await enrichWithGithubData([makeContainer()]);
+    expect(result.status).toBe('unknown');
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('API error: Something went wrong')
+    );
+  });
+
+  it('logs "API error" with stringified value for non-Error throw', async () => {
+    fetchMock.mockRejectedValueOnce('string error');
+    const [result] = await enrichWithGithubData([makeContainer()]);
+    expect(result.status).toBe('unknown');
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('API error: string error')
+    );
   });
 });

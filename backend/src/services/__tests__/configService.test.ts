@@ -8,32 +8,40 @@ vi.mock('fs', () => ({
     mkdirSync: vi.fn(),
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
+    renameSync: vi.fn(),
+    unlinkSync: vi.fn(),
     readdirSync: vi.fn(),
   },
 }));
 
 import fsDefault from 'fs';
-import { loadConfig, saveConfig, setRepoMapping } from '../configService.js';
+import { loadConfig, saveConfig, setRepoMapping, resetDataDirCache } from '../configService.js';
 
 const mockFs = fsDefault as unknown as {
   existsSync: ReturnType<typeof vi.fn>;
   mkdirSync: ReturnType<typeof vi.fn>;
   readFileSync: ReturnType<typeof vi.fn>;
   writeFileSync: ReturnType<typeof vi.fn>;
+  renameSync: ReturnType<typeof vi.fn>;
+  unlinkSync: ReturnType<typeof vi.fn>;
 };
 
 // Replicate module-level constants (must match configService.ts logic)
 const DATA_DIR = '/data';
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
+const TMP_FILE = `${CONFIG_FILE}.${process.pid}.tmp`;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  resetDataDirCache();
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 // loadConfig
 // ────────────────────────────────────────────────────────────────────────────
 describe('loadConfig', () => {
   it('returns default config when config file does not exist', () => {
-    mockFs.existsSync.mockImplementation((p) => p === DATA_DIR); // dir exists, file does not
+    mockFs.existsSync.mockImplementation((p: string) => p === DATA_DIR); // dir exists, file does not
     const config = loadConfig();
     expect(config).toEqual({ repoMappings: {} });
   });
@@ -46,7 +54,7 @@ describe('loadConfig', () => {
   });
 
   it('does not call mkdirSync when DATA_DIR already exists', () => {
-    mockFs.existsSync.mockImplementation((p) => p === DATA_DIR);
+    mockFs.existsSync.mockImplementation((p: string) => p === DATA_DIR);
     loadConfig();
     expect(mockFs.mkdirSync).not.toHaveBeenCalled();
   });
@@ -67,11 +75,40 @@ describe('loadConfig', () => {
     expect(config).toEqual({ repoMappings: {} });
   });
 
+  it('logs error to console.error when file contains invalid JSON', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue('{invalid json}}}');
+
+    loadConfig();
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe('Failed to load config:');
+    expect(spy.mock.calls[0][1]).toBeInstanceOf(SyntaxError);
+    spy.mockRestore();
+  });
+
+  it('logs error to console.error when readFileSync throws', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockImplementation(() => { throw new Error('Permission denied'); });
+
+    const config = loadConfig();
+
+    expect(config).toEqual({ repoMappings: {} });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe('Failed to load config:');
+    expect(spy.mock.calls[0][1]).toBeInstanceOf(Error);
+    spy.mockRestore();
+  });
+
   it('returns default config when readFileSync throws', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockImplementation(() => { throw new Error('Permission denied'); });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const config = loadConfig();
     expect(config).toEqual({ repoMappings: {} });
+    spy.mockRestore();
   });
 
   it('reads from the correct file path', () => {
@@ -83,19 +120,33 @@ describe('loadConfig', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// saveConfig
+// saveConfig – atomic write
 // ────────────────────────────────────────────────────────────────────────────
 describe('saveConfig', () => {
-  it('writes config as pretty-printed JSON to the correct path', () => {
+  it('writes config to a tmp file then renames to the final path', () => {
     mockFs.existsSync.mockReturnValue(true);
     const config = { repoMappings: { 'a::b': 'owner/repo' } };
 
     saveConfig(config);
 
+    // Should write to tmp file first
     expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-      CONFIG_FILE,
+      TMP_FILE,
       JSON.stringify(config, null, 2)
     );
+    // Then rename to final path
+    expect(mockFs.renameSync).toHaveBeenCalledWith(TMP_FILE, CONFIG_FILE);
+  });
+
+  it('calls writeFileSync before renameSync', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    const callOrder: string[] = [];
+    mockFs.writeFileSync.mockImplementation(() => { callOrder.push('write'); });
+    mockFs.renameSync.mockImplementation(() => { callOrder.push('rename'); });
+
+    saveConfig({ repoMappings: {} });
+
+    expect(callOrder).toEqual(['write', 'rename']);
   });
 
   it('creates DATA_DIR if it does not exist before writing', () => {
@@ -115,6 +166,29 @@ describe('saveConfig', () => {
     saveConfig(config);
     const written = JSON.parse((mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1]);
     expect(written.repoMappings).toEqual(config.repoMappings);
+  });
+
+  it('cleans up tmp file if renameSync fails', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.renameSync.mockImplementation(() => { throw new Error('Rename failed'); });
+
+    expect(() => saveConfig({ repoMappings: {} })).toThrow('Rename failed');
+    expect(mockFs.unlinkSync).toHaveBeenCalledWith(TMP_FILE);
+  });
+
+  it('does not throw if tmp file cleanup also fails after rename failure', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.renameSync.mockImplementation(() => { throw new Error('Rename failed'); });
+    mockFs.unlinkSync.mockImplementation(() => { throw new Error('Cleanup failed'); });
+
+    // Should still throw the original rename error, not the cleanup error
+    expect(() => saveConfig({ repoMappings: {} })).toThrow('Rename failed');
+  });
+
+  it('propagates error when writeFileSync throws', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.writeFileSync.mockImplementationOnce(() => { throw new Error('Disk full'); });
+    expect(() => saveConfig({ repoMappings: {} })).toThrow('Disk full');
   });
 });
 
@@ -198,20 +272,23 @@ describe('loadConfig – edge cases', () => {
   });
 
   it('returns default config for an empty file', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockReturnValue('');
     const config = loadConfig();
     expect(config).toEqual({ repoMappings: {} });
+    spy.mockRestore();
   });
 });
 
 describe('saveConfig – edge cases', () => {
-  it('propagates error when writeFileSync throws', () => {
+  it('propagates error when writeFileSync throws (no rename attempted)', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.writeFileSync.mockImplementationOnce(() => { throw new Error('Disk full'); });
     expect(() => saveConfig({ repoMappings: {} })).toThrow('Disk full');
+    // renameSync should not have been called since writeFileSync failed
+    expect(mockFs.renameSync).not.toHaveBeenCalled();
   });
-
 });
 
 describe('setRepoMapping – edge cases', () => {
@@ -234,5 +311,36 @@ describe('setRepoMapping – edge cases', () => {
     mockFs.readFileSync.mockReturnValue('{"repoMappings":{}}');
     setRepoMapping('sub%2Fdir/compose.yml::app', 'org/repo');
     expect(getWrittenConfig().repoMappings['sub%2Fdir/compose.yml::app']).toBe('org/repo');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// ensureDataDir caching
+// ────────────────────────────────────────────────────────────────────────────
+describe('ensureDataDir caching', () => {
+  it('only checks existsSync for DATA_DIR once across multiple calls', () => {
+    // First call: dir does not exist, gets created
+    mockFs.existsSync.mockReturnValue(false);
+    loadConfig();
+    expect(mockFs.mkdirSync).toHaveBeenCalledTimes(1);
+
+    // Second call: should skip the existsSync check entirely due to cache
+    mockFs.existsSync.mockClear();
+    mockFs.mkdirSync.mockClear();
+    mockFs.existsSync.mockReturnValue(false); // wouldn't matter — should be skipped
+    loadConfig();
+    expect(mockFs.mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it('rechecks after resetDataDirCache()', () => {
+    mockFs.existsSync.mockReturnValue(false);
+    loadConfig();
+    expect(mockFs.mkdirSync).toHaveBeenCalledTimes(1);
+
+    resetDataDirCache();
+    mockFs.mkdirSync.mockClear();
+    mockFs.existsSync.mockReturnValue(false);
+    loadConfig();
+    expect(mockFs.mkdirSync).toHaveBeenCalledTimes(1);
   });
 });

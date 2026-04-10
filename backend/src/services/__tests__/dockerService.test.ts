@@ -15,7 +15,7 @@ vi.mock('fs', () => ({
 
 // Import AFTER mock declaration so imports receive the mock
 import fsDefault from 'fs';
-import { inferGithubRepo, scanDockerDir } from '../dockerService.js';
+import { inferGithubRepo, scanDockerDir, DEFAULT_IMAGE_MAPPINGS } from '../dockerService.js';
 
 const mockFs = fsDefault as unknown as {
   existsSync: ReturnType<typeof vi.fn>;
@@ -35,6 +35,7 @@ const DOCKER_DIR = '/docker';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());
@@ -335,5 +336,77 @@ describe('inferGithubRepo – additional edge cases', () => {
 
   it('strips docker.io before applying known-mapping lookup', () => {
     expect(inferGithubRepo('docker.io/gitea/gitea')).toBe('go-gitea/gitea');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// extraMappings parameter
+// ────────────────────────────────────────────────────────────────────────────
+describe('inferGithubRepo – extraMappings', () => {
+  it('uses extraMappings to resolve an image that has no default mapping', () => {
+    const extra = { 'mycustomimg': 'myorg/mycustomrepo' };
+    expect(inferGithubRepo('mycustomimg', extra)).toBe('myorg/mycustomrepo');
+  });
+
+  it('extraMappings override DEFAULT_IMAGE_MAPPINGS', () => {
+    const extra = { 'gitea/gitea': 'custom-org/custom-gitea' };
+    expect(inferGithubRepo('gitea/gitea', extra)).toBe('custom-org/custom-gitea');
+  });
+
+  it('falls back to DEFAULT_IMAGE_MAPPINGS when extraMappings does not match', () => {
+    const extra = { 'some/other': 'org/other' };
+    expect(inferGithubRepo('gitea/gitea', extra)).toBe('go-gitea/gitea');
+  });
+
+  it('extraMappings work after registry prefix stripping', () => {
+    const extra = { 'linuxserver/sonarr': 'custom-org/sonarr-fork' };
+    expect(inferGithubRepo('ghcr.io/linuxserver/sonarr', extra)).toBe('custom-org/sonarr-fork');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// DEFAULT_IMAGE_MAPPINGS export
+// ────────────────────────────────────────────────────────────────────────────
+describe('DEFAULT_IMAGE_MAPPINGS', () => {
+  it('is exported and contains known entries', () => {
+    expect(DEFAULT_IMAGE_MAPPINGS).toBeDefined();
+    expect(DEFAULT_IMAGE_MAPPINGS['gitea/gitea']).toBe('go-gitea/gitea');
+    expect(DEFAULT_IMAGE_MAPPINGS['traefik']).toBe('traefik/traefik');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// scanDockerDir – YAML validation
+// ────────────────────────────────────────────────────────────────────────────
+describe('scanDockerDir – YAML validation', () => {
+  it('skips compose files that parse to a non-object (e.g. a plain string)', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
+    mockFs.readFileSync.mockReturnValue('"just a string"');
+
+    expect(scanDockerDir()).toHaveLength(0);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('invalid compose file structure')
+    );
+  });
+
+  it('skips compose files where services is not an object (e.g. an array)', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
+    mockFs.readFileSync.mockReturnValue('services:\n  - item1\n  - item2\n');
+
+    expect(scanDockerDir()).toHaveLength(0);
+  });
+
+  it('logs a structured warning on YAML parse error', () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
+    mockFs.readFileSync.mockReturnValue(': invalid: yaml: [[[');
+
+    scanDockerDir();
+
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^Skipping .+: .+/)
+    );
   });
 });

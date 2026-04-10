@@ -4,6 +4,7 @@ import { RefreshCw, Container, CheckCircle, AlertTriangle, AlertCircle, HelpCirc
 import type { ContainerInfo } from './types';
 import ContainerCard from './components/ContainerCard.vue';
 import RepoModal from './components/RepoModal.vue';
+import StatCard from './components/StatCard.vue';
 import { STATUS_THEME, UI } from './theme';
 
 type FilterStatus = 'all' | ContainerInfo['status'];
@@ -25,6 +26,7 @@ const refreshError = ref<string | null>(null);
 const filter = ref<FilterStatus>('all');
 const modalContainer = ref<ContainerInfo | null>(null);
 
+// Tracks the latest request ID to discard stale responses
 let currentRequest = 0;
 
 async function fetchContainers(forceRefresh = false) {
@@ -139,34 +141,38 @@ onMounted(() => fetchContainers());
 
       <!-- Stats -->
       <div v-if="!loading && containers.length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div :class="`${STATUS_THEME['breaking-change'].bg} border ${STATUS_THEME['breaking-change'].border} rounded-xl px-4 py-3 flex items-center gap-3`">
-          <AlertCircle :size="16" :class="`${STATUS_THEME['breaking-change'].text} shrink-0`" />
-          <div>
-            <p :class="`${UI.textPrimary} text-xl font-bold leading-none`">{{ counts.breaking }}</p>
-            <p :class="`${UI.textMuted} text-xs mt-0.5`">Breaking</p>
-          </div>
-        </div>
-        <div :class="`${STATUS_THEME['update-available'].bg} border ${STATUS_THEME['update-available'].border} rounded-xl px-4 py-3 flex items-center gap-3`">
-          <AlertTriangle :size="16" :class="`${STATUS_THEME['update-available'].text} shrink-0`" />
-          <div>
-            <p :class="`${UI.textPrimary} text-xl font-bold leading-none`">{{ counts.updates }}</p>
-            <p :class="`${UI.textMuted} text-xs mt-0.5`">Updates</p>
-          </div>
-        </div>
-        <div :class="`${STATUS_THEME['up-to-date'].bg} border ${STATUS_THEME['up-to-date'].border} rounded-xl px-4 py-3 flex items-center gap-3`">
-          <CheckCircle :size="16" :class="`${STATUS_THEME['up-to-date'].text} shrink-0`" />
-          <div>
-            <p :class="`${UI.textPrimary} text-xl font-bold leading-none`">{{ counts.ok }}</p>
-            <p :class="`${UI.textMuted} text-xs mt-0.5`">Up to date</p>
-          </div>
-        </div>
-        <div :class="`${STATUS_THEME['no-repo'].bg} border ${STATUS_THEME['no-repo'].border} rounded-xl px-4 py-3 flex items-center gap-3`">
-          <HelpCircle :size="16" :class="`${STATUS_THEME['no-repo'].text} shrink-0`" />
-          <div>
-            <p :class="`${UI.textPrimary} text-xl font-bold leading-none`">{{ counts.noRepo }}</p>
-            <p :class="`${UI.textMuted} text-xs mt-0.5`">No repo</p>
-          </div>
-        </div>
+        <StatCard
+          :icon="AlertCircle"
+          :count="counts.breaking"
+          label="Breaking"
+          :bg-class="STATUS_THEME['breaking-change'].bg"
+          :border-class="STATUS_THEME['breaking-change'].border"
+          :text-class="STATUS_THEME['breaking-change'].text"
+        />
+        <StatCard
+          :icon="AlertTriangle"
+          :count="counts.updates"
+          label="Updates"
+          :bg-class="STATUS_THEME['update-available'].bg"
+          :border-class="STATUS_THEME['update-available'].border"
+          :text-class="STATUS_THEME['update-available'].text"
+        />
+        <StatCard
+          :icon="CheckCircle"
+          :count="counts.ok"
+          label="Up to date"
+          :bg-class="STATUS_THEME['up-to-date'].bg"
+          :border-class="STATUS_THEME['up-to-date'].border"
+          :text-class="STATUS_THEME['up-to-date'].text"
+        />
+        <StatCard
+          :icon="HelpCircle"
+          :count="counts.noRepo"
+          label="No repo"
+          :bg-class="STATUS_THEME['no-repo'].bg"
+          :border-class="STATUS_THEME['no-repo'].border"
+          :text-class="STATUS_THEME['no-repo'].text"
+        />
       </div>
 
       <!-- Filters -->

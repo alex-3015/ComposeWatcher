@@ -53,7 +53,7 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 
 4. Open [http://localhost:8555](http://localhost:8555)
 
-## Environment Variables (Backend)
+## Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
@@ -61,6 +61,8 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 | `DATA_DIR` | `/data` | Path for the persistent config JSON |
 | `PORT` | `3000` | Backend server port |
 | `GITHUB_TOKEN` | _(none)_ | GitHub personal access token — raises API rate limit from 60 to 5 000 req/hour |
+| `CORS_ORIGIN` | `*` | Allowed CORS origins. `*` allows all. Comma-separated list for multiple origins (e.g. `http://localhost:3000,https://my.domain`) |
+| `CACHE_TTL_MS` | `300000` | Cache time-to-live in milliseconds (default: 5 minutes) |
 
 ### GitHub API Rate Limits
 
@@ -92,11 +94,21 @@ environment:
 3. If a repo is linked, it fetches the latest releases from the GitHub API
 4. The current image tag is compared against the latest release using semver
 5. Release notes are scanned for breaking change indicators
-6. Results are cached for 5 minutes and served to the frontend
+6. Results are cached (default: 5 minutes, configurable via `CACHE_TTL_MS`) and served to the frontend
 
 ## Persistent Storage
 
-Repository mappings are stored in a Docker volume at `/data/config.json`. This persists across container restarts.
+Repository mappings are stored in a Docker volume at `/data/config.json`. This persists across container restarts. Config writes are atomic (write to tmp file + rename) to prevent corruption on unexpected shutdowns.
+
+## Container Security
+
+The container runs with a non-root user (`appuser`) and includes:
+
+- **tini** as PID 1 for proper signal forwarding and zombie process reaping
+- **HEALTHCHECK** on `/api/containers` (30s interval)
+- **Security headers** via nginx: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`
+
+Graceful shutdown is supported — `docker stop` cleanly terminates both nginx and the Node.js backend.
 
 ## License
 

@@ -1,8 +1,16 @@
 #!/bin/sh
 set -e
 
-# Start backend in background
 node /app/dist/index.js &
+NODE_PID=$!
 
-# Start nginx in foreground (keeps container alive)
-exec nginx -g "daemon off;"
+cleanup() {
+  kill "$NODE_PID" 2>/dev/null
+  wait "$NODE_PID" 2>/dev/null
+}
+trap cleanup TERM INT
+
+nginx -g "daemon off;" &
+NGINX_PID=$!
+
+wait $NGINX_PID
