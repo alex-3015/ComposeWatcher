@@ -51,7 +51,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 RUN sed -i 's|/run/nginx/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
 
 # Ensure writable directories for non-root user
-RUN mkdir -p /data /var/tmp/nginx && \
+RUN mkdir -p /data /var/tmp/nginx /var/cache/nginx /var/log/nginx && \
     chown -R appuser:appgroup /data && \
     chown -R appuser:appgroup /var/cache/nginx && \
     chown -R appuser:appgroup /var/run && \
