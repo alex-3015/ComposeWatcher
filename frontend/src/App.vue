@@ -40,6 +40,8 @@ const collapsedGroups = ref<Set<string>>(new Set());
 // Tracks the latest request ID to discard stale responses
 let currentRequest = 0;
 
+let staleRetryScheduled = false;
+
 async function fetchContainers(forceRefresh = false) {
   const reqId = ++currentRequest;
   try {
@@ -55,6 +57,19 @@ async function fetchContainers(forceRefresh = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: ContainerInfo[] = await res.json();
     if (reqId === currentRequest) containers.value = data;
+
+    // Auto-refresh once when backend returns stale (disk-cached) data
+    if (
+      res.headers.get('X-Data-Stale') === 'true' &&
+      !forceRefresh &&
+      !staleRetryScheduled
+    ) {
+      staleRetryScheduled = true;
+      setTimeout(() => {
+        staleRetryScheduled = false;
+        fetchContainers(false);
+      }, 3000);
+    }
   } catch (e) {
     if (reqId !== currentRequest) return;
     const msg = e instanceof Error ? e.message : 'Unknown error';

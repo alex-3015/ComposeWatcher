@@ -30,12 +30,17 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
   };
 }
 
-function mockContainersResponse(containers: ContainerInfo[]) {
+function mockHeaders(entries: Record<string, string> = {}) {
+  return { get: (name: string) => entries[name] ?? null };
+}
+
+function mockContainersResponse(containers: ContainerInfo[], headers: Record<string, string> = {}) {
   fetchMock.mockResolvedValueOnce({
     ok: true,
     status: 200,
     json: () => Promise.resolve(containers),
     text: () => Promise.resolve(''),
+    headers: mockHeaders(headers),
   });
 }
 
@@ -45,6 +50,7 @@ function mockErrorResponse() {
     status: 500,
     json: () => Promise.resolve([]),
     text: () => Promise.resolve('Server error'),
+    headers: mockHeaders(),
   });
 }
 

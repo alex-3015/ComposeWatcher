@@ -12,16 +12,28 @@ vi.mock('../services/configService.js', () => ({
   loadConfig: vi.fn(),
   setRepoMapping: vi.fn(),
 }));
+vi.mock('../services/cacheService.js', () => ({
+  loadCachedContainers: vi.fn(),
+  saveCachedContainers: vi.fn(),
+}));
+vi.mock('../services/iconService.js', () => ({
+  downloadIconsForContainers: vi.fn(),
+}));
 
 import { buildApp } from '../app.js';
 import { scanDockerDir } from '../services/dockerService.js';
 import { enrichWithGithubData } from '../services/githubService.js';
 import { loadConfig, setRepoMapping } from '../services/configService.js';
+import { loadCachedContainers, saveCachedContainers } from '../services/cacheService.js';
+import { downloadIconsForContainers } from '../services/iconService.js';
 
 const mockScanDockerDir = vi.mocked(scanDockerDir);
 const mockEnrichWithGithubData = vi.mocked(enrichWithGithubData);
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockSetRepoMapping = vi.mocked(setRepoMapping);
+const mockLoadCachedContainers = vi.mocked(loadCachedContainers);
+const mockSaveCachedContainers = vi.mocked(saveCachedContainers);
+const mockDownloadIconsForContainers = vi.mocked(downloadIconsForContainers);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
@@ -48,6 +60,9 @@ function setupDefaultMocks() {
   vi.resetAllMocks();
   mockLoadConfig.mockReturnValue({ repoMappings: {} });
   mockScanDockerDir.mockReturnValue([makeContainer()]);
+  mockLoadCachedContainers.mockReturnValue(null);
+  mockSaveCachedContainers.mockImplementation(() => {});
+  mockDownloadIconsForContainers.mockResolvedValue(undefined);
   mockEnrichWithGithubData.mockImplementation(async (c) => c);
 }
 
@@ -914,5 +929,121 @@ describe('buildApp', () => {
     const res = await app.inject({ method: 'GET', url: '/api/containers' });
     expect(res.statusCode).toBe(200);
     await app.close();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// GET /api/containers — disk cache & background refresh
+// ────────────────────────────────────────────────────────────────────────────
+describe('GET /api/containers – disk cache & stale data', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+
+  beforeEach(async () => {
+    setupDefaultMocks();
+    app = await buildApp({ logger: false });
+  });
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('returns disk-cached data on cold start when memory cache is null', async () => {
+    const cached = [makeContainer({ name: 'cached-sonarr' })];
+    mockLoadCachedContainers.mockReturnValue({ containers: cached, ts: Date.now() - 60_000 });
+
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body[0].name).toBe('cached-sonarr');
+  });
+
+  it('sets X-Data-Stale header when returning disk-cached data', async () => {
+    const cached = [makeContainer()];
+    mockLoadCachedContainers.mockReturnValue({ containers: cached, ts: Date.now() - 60_000 });
+
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res.headers['x-data-stale']).toBe('true');
+  });
+
+  it('does not set X-Data-Stale on normal memory cache hit', async () => {
+    // First request populates memory cache (no disk cache available)
+    mockLoadCachedContainers.mockReturnValue(null);
+    const res1 = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res1.headers['x-data-stale']).toBeUndefined();
+
+    // Second request should hit memory cache
+    const res2 = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res2.headers['x-data-stale']).toBeUndefined();
+  });
+
+  it('does not set X-Data-Stale after force refresh', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/containers?refresh=true' });
+    expect(res.headers['x-data-stale']).toBeUndefined();
+  });
+
+  it('falls through to synchronous scan when no disk cache exists', async () => {
+    mockLoadCachedContainers.mockReturnValue(null);
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res.statusCode).toBe(200);
+    expect(mockScanDockerDir).toHaveBeenCalledTimes(1);
+    expect(mockEnrichWithGithubData).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls saveCachedContainers after successful scan+enrich', async () => {
+    mockLoadCachedContainers.mockReturnValue(null);
+    await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(mockSaveCachedContainers).toHaveBeenCalledTimes(1);
+    expect(mockSaveCachedContainers).toHaveBeenCalledWith(expect.any(Array));
+  });
+
+  it('calls downloadIconsForContainers after enrichment', async () => {
+    mockLoadCachedContainers.mockReturnValue(null);
+    await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(mockDownloadIconsForContainers).toHaveBeenCalledTimes(1);
+  });
+
+  it('triggers background refresh after returning stale data', async () => {
+    const cached = [makeContainer({ name: 'old-data' })];
+    mockLoadCachedContainers.mockReturnValue({ containers: cached, ts: Date.now() - 60_000 });
+
+    await app.inject({ method: 'GET', url: '/api/containers' });
+
+    // Wait for background refresh to settle
+    await vi.waitFor(() => {
+      expect(mockScanDockerDir).toHaveBeenCalled();
+    });
+    expect(mockEnrichWithGithubData).toHaveBeenCalled();
+  });
+
+  it('background refresh errors do not crash the server', async () => {
+    const cached = [makeContainer()];
+    mockLoadCachedContainers.mockReturnValue({ containers: cached, ts: Date.now() - 60_000 });
+    mockScanDockerDir.mockImplementation(() => {
+      throw new Error('Background scan failed');
+    });
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res.statusCode).toBe(200);
+
+    // Wait a tick for the background refresh to settle
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Server should still work
+    mockScanDockerDir.mockReturnValue([makeContainer()]);
+    mockLoadCachedContainers.mockReturnValue(null);
+    const res2 = await app.inject({ method: 'GET', url: '/api/containers?refresh=true' });
+    expect(res2.statusCode).toBe(200);
+    spy.mockRestore();
+  });
+
+  it('does not call saveCachedContainers on memory cache hit', async () => {
+    mockLoadCachedContainers.mockReturnValue(null);
+    // First request — populates cache
+    await app.inject({ method: 'GET', url: '/api/containers' });
+    mockSaveCachedContainers.mockClear();
+
+    // Second request — memory cache hit
+    await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(mockSaveCachedContainers).not.toHaveBeenCalled();
   });
 });

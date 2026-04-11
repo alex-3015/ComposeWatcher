@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { getContainerIconUrl, ICON_NAME_MAP } from '../iconMap';
 
-const BASE = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png';
+const BASE = '/icons';
 
 describe('getContainerIconUrl', () => {
   it('returns a direct URL for names that need no mapping', () => {

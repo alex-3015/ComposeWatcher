@@ -45,6 +45,13 @@ export function mockApiPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ?? '';
 
+        // GET /icons/* — return 404 so frontend falls back to Package icon
+        if (req.method === 'GET' && url.startsWith('/icons/')) {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+
         // GET /api/containers
         if (req.method === 'GET' && (url === '/api/containers' || url === '/api/containers?refresh=true')) {
           await delay();

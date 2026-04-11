@@ -6,7 +6,7 @@ export const ICON_NAME_MAP: Record<string, string> = {
   'portainer-ee': 'portainer',
 };
 
-const ICON_BASE = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png';
+const ICON_BASE = '/icons';
 
 export function getContainerIconUrl(serviceName: string): string {
   const key = serviceName.toLowerCase().trim();

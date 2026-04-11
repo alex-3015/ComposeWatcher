@@ -34,7 +34,7 @@ describe('ContainerCard – icon', () => {
     const img = w.find('img');
     expect(img.exists()).toBe(true);
     expect(img.attributes('src')).toBe(
-      'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/sonarr.png',
+      '/icons/sonarr.png',
     );
     expect(img.attributes('alt')).toBe('sonarr');
   });
@@ -60,7 +60,7 @@ describe('ContainerCard – icon', () => {
       global: { stubs },
     });
     expect(w.find('img').attributes('src')).toBe(
-      'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/adguard-home.png',
+      '/icons/adguard-home.png',
     );
   });
 });
