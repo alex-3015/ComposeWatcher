@@ -8,12 +8,14 @@ import {
   AlertCircle,
   HelpCircle,
   Search,
-} from 'lucide-vue-next';
+} from '@lucide/vue';
 import type { ContainerInfo } from './types';
 import ComposeGroup from './components/ComposeGroup.vue';
 import RepoModal from './components/RepoModal.vue';
 import StatCard from './components/StatCard.vue';
 import { STATUS_THEME, UI } from './theme';
+import { useContainers } from './composables/useContainers';
+import type { CheckIssueCode } from './types';
 
 type FilterStatus = 'all' | ContainerInfo['status'];
 
@@ -26,80 +28,63 @@ const FILTER_OPTIONS: { value: FilterStatus; label: string }[] = [
   { value: 'unknown', label: 'Unknown' },
 ];
 
-const containers = ref<ContainerInfo[]>([]);
-const loading = ref(true);
-const refreshing = ref(false);
-const error = ref<string | null>(null);
-const refreshError = ref<string | null>(null);
+const {
+  containers,
+  meta,
+  loading,
+  refreshing,
+  error,
+  refreshError,
+  isRevalidating,
+  fetchContainers,
+  updateRepository,
+} = useContainers();
 const filter = ref<FilterStatus>('all');
 const searchQuery = ref('');
 const modalContainer = ref<ContainerInfo | null>(null);
 const saveError = ref<string | null>(null);
 const collapsedGroups = ref<Set<string>>(new Set());
-
-// Tracks the latest request ID to discard stale responses
-let currentRequest = 0;
-
-let staleRetryScheduled = false;
-
-async function fetchContainers(forceRefresh = false) {
-  const reqId = ++currentRequest;
-  try {
-    if (forceRefresh) {
-      refreshing.value = true;
-      refreshError.value = null;
-    } else {
-      loading.value = true;
-      error.value = null;
-    }
-    const url = `/api/containers${forceRefresh ? '?refresh=true' : ''}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data: ContainerInfo[] = await res.json();
-    if (reqId === currentRequest) containers.value = data;
-
-    // Auto-refresh once when backend returns stale (disk-cached) data
-    if (
-      res.headers.get('X-Data-Stale') === 'true' &&
-      !forceRefresh &&
-      !staleRetryScheduled
-    ) {
-      staleRetryScheduled = true;
-      setTimeout(() => {
-        staleRetryScheduled = false;
-        fetchContainers(false);
-      }, 3000);
-    }
-  } catch (e) {
-    if (reqId !== currentRequest) return;
-    const msg = e instanceof Error ? e.message : 'Unknown error';
-    if (forceRefresh) {
-      refreshError.value = msg;
-    } else {
-      error.value = msg;
-    }
-  } finally {
-    if (reqId === currentRequest) {
-      loading.value = false;
-      refreshing.value = false;
-    }
-  }
-}
+const dismissedIssues = ref<Set<CheckIssueCode>>(new Set());
 
 async function handleSaveRepo(containerId: string, repo: string | null) {
   saveError.value = null;
   try {
-    const res = await fetch(`/api/containers/${encodeURIComponent(containerId)}/repo`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo }),
-    });
-    if (!res.ok) throw new Error('Save failed');
+    await updateRepository(containerId, repo);
     modalContainer.value = null;
-    await fetchContainers(true);
   } catch (e) {
     saveError.value = e instanceof Error ? e.message : 'Unknown error';
   }
+}
+
+const issueSummaries = computed(() => {
+  const summaries = new Map<
+    CheckIssueCode,
+    { code: CheckIssueCode; message: string; count: number; retryAt: string | null }
+  >();
+  for (const container of containers.value) {
+    const issue = container.checkIssue;
+    if (!issue) continue;
+    const existing = summaries.get(issue.code);
+    if (existing) existing.count += 1;
+    else summaries.set(issue.code, { ...issue, count: 1 });
+  }
+  return [...summaries.values()].filter(
+    (summary) =>
+      !dismissedIssues.value.has(summary.code) &&
+      (summary.code === 'rate-limited' || summary.count > 1),
+  );
+});
+
+function dismissIssue(code: CheckIssueCode): void {
+  dismissedIssues.value = new Set([...dismissedIssues.value, code]);
+}
+
+function formatRetryAt(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function countForStatus(status: FilterStatus): number {
@@ -189,7 +174,7 @@ onMounted(() => fetchContainers());
       <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="p-2 bg-blue-600/20 rounded-lg">
-            <Container :size="20" :class="UI.primaryText" />
+            <Container :size="20" :class="UI.primaryText" aria-hidden="true" />
           </div>
           <div>
             <h1 :class="`text-base font-semibold ${UI.textPrimary} leading-none`">
@@ -202,10 +187,11 @@ onMounted(() => fetchContainers());
         </div>
         <button
           :disabled="refreshing"
+          aria-label="Refresh container status"
           :class="`flex items-center gap-2 ${UI.inputBg} hover:bg-gray-700 disabled:opacity-50 border ${UI.borderSubtle} rounded-lg px-3 py-2 text-sm text-gray-300 transition-colors`"
           @click="fetchContainers(true)"
         >
-          <RefreshCw :size="14" :class="refreshing ? 'animate-spin' : ''" />
+          <RefreshCw :size="14" :class="refreshing ? 'animate-spin' : ''" aria-hidden="true" />
           {{ refreshing ? 'Checking…' : 'Refresh' }}
         </button>
       </div>
@@ -215,12 +201,44 @@ onMounted(() => fetchContainers());
       <!-- Refresh error banner (keeps existing containers visible) -->
       <div
         v-if="refreshError"
+        role="alert"
         :class="`${UI.errorBg} border ${UI.errorBorder} rounded-xl px-4 py-3 mb-5 flex items-center justify-between gap-4`"
       >
         <p :class="`${UI.errorText} text-sm`">Refresh failed: {{ refreshError }}</p>
         <button
+          aria-label="Dismiss refresh error"
           :class="`${UI.errorText} ${UI.errorTextHover} text-sm shrink-0`"
           @click="refreshError = null"
+        >
+          Dismiss
+        </button>
+      </div>
+
+      <div
+        v-if="meta.stale || isRevalidating"
+        role="status"
+        aria-live="polite"
+        :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-xl px-4 py-3 mb-5 text-sm ${UI.textSecondary}`"
+      >
+        Showing cached data{{ isRevalidating ? ' while a fresh check runs…' : '.' }}
+      </div>
+
+      <div
+        v-for="summary in issueSummaries"
+        :key="summary.code"
+        role="alert"
+        :class="`${UI.errorBg} border ${UI.errorBorder} rounded-xl px-4 py-3 mb-5 flex items-start justify-between gap-4`"
+      >
+        <p :class="`${UI.errorText} text-sm`">
+          {{ summary.message }} Affected containers: {{ summary.count }}.
+          <span v-if="formatRetryAt(summary.retryAt)">
+            Try again after {{ formatRetryAt(summary.retryAt) }}.
+          </span>
+        </p>
+        <button
+          :aria-label="`Dismiss ${summary.code} warning`"
+          :class="`${UI.errorText} ${UI.errorTextHover} text-sm shrink-0`"
+          @click="dismissIssue(summary.code)"
         >
           Dismiss
         </button>
@@ -267,9 +285,15 @@ onMounted(() => fetchContainers());
 
       <!-- Search -->
       <div v-if="!loading && containers.length > 0" class="mb-4">
+        <label for="container-search" class="sr-only">Search containers</label>
         <div class="relative">
-          <Search :size="16" :class="`absolute left-3 top-1/2 -translate-y-1/2 ${UI.textMuted}`" />
+          <Search
+            :size="16"
+            :class="`absolute left-3 top-1/2 -translate-y-1/2 ${UI.textMuted}`"
+            aria-hidden="true"
+          />
           <input
+            id="container-search"
             v-model="searchQuery"
             type="text"
             placeholder="Search containers..."
@@ -289,6 +313,7 @@ onMounted(() => fetchContainers());
               ? `${UI.primaryBg} ${UI.textPrimary}`
               : `${UI.inputBg} ${UI.textSecondary} hover:text-gray-200 border ${UI.borderSubtle}`,
           ]"
+          :aria-pressed="filter === opt.value"
           @click="filter = opt.value"
         >
           {{ opt.label }}
@@ -299,14 +324,20 @@ onMounted(() => fetchContainers());
       </div>
 
       <!-- Loading -->
-      <div v-if="loading" :class="`flex items-center justify-center py-24 ${UI.textMuted}`">
-        <RefreshCw :size="20" class="animate-spin mr-2" />
+      <div
+        v-if="loading"
+        role="status"
+        aria-live="polite"
+        :class="`flex items-center justify-center py-24 ${UI.textMuted}`"
+      >
+        <RefreshCw :size="20" class="animate-spin mr-2" aria-hidden="true" />
         Scanning containers…
       </div>
 
       <!-- Error (initial load only – containers not yet available) -->
       <div
         v-else-if="error && containers.length === 0"
+        role="alert"
         :class="`${UI.errorBg} border ${UI.errorBorder} rounded-xl p-6 text-center`"
       >
         <p :class="`${UI.errorText} font-medium`">Error loading containers</p>

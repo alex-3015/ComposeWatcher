@@ -85,8 +85,8 @@ describe('loadConfig', () => {
     loadConfig();
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe('Failed to load config:');
-    expect(spy.mock.calls[0][1]).toBeInstanceOf(SyntaxError);
+    expect(spy.mock.calls[0][0]).toBe('Failed to load config');
+    expect(spy.mock.calls[0][1]).toEqual({ error: expect.any(SyntaxError) });
     spy.mockRestore();
   });
 
@@ -101,8 +101,8 @@ describe('loadConfig', () => {
 
     expect(config).toEqual({ repoMappings: {} });
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe('Failed to load config:');
-    expect(spy.mock.calls[0][1]).toBeInstanceOf(Error);
+    expect(spy.mock.calls[0][0]).toBe('Failed to load config');
+    expect(spy.mock.calls[0][1]).toEqual({ error: expect.any(Error) });
     spy.mockRestore();
   });
 

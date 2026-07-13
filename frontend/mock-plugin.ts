@@ -55,7 +55,15 @@ export function mockApiPlugin(): Plugin {
         // GET /api/containers
         if (req.method === 'GET' && (url === '/api/containers' || url === '/api/containers?refresh=true')) {
           await delay();
-          return json(res, containers);
+          return json(res, {
+            data: containers,
+            meta: {
+              stale: false,
+              refreshing: false,
+              refreshedAt: new Date().toISOString(),
+              refreshError: null,
+            },
+          });
         }
 
         // POST /api/containers/:id/repo
@@ -74,7 +82,7 @@ export function mockApiPlugin(): Plugin {
                 }
               : c
           );
-          return json(res, { ok: true });
+          return json(res, { data: { id, githubRepo: repo } });
         }
 
         // GET /api/config
@@ -82,7 +90,7 @@ export function mockApiPlugin(): Plugin {
           const repoMappings = Object.fromEntries(
             containers.filter((c) => c.githubRepo).map((c) => [c.id, c.githubRepo!])
           );
-          return json(res, { repoMappings });
+          return json(res, { data: { repoMappings } });
         }
 
         next();

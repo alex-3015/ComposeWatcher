@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import { load as loadYaml } from 'js-yaml';
 import type { ContainerInfo } from '../types.js';
+import { consoleServiceLogger, type ServiceLogger } from './serviceLogger.js';
 
 const DOCKER_DIR = process.env.DOCKER_DIR ?? '/docker';
 
@@ -115,24 +116,24 @@ function findComposeFiles(dir: string): string[] {
   return results;
 }
 
-export function scanDockerDir(): ContainerInfo[] {
+export function scanDockerDir(logger: ServiceLogger = consoleServiceLogger): ContainerInfo[] {
   const composeFiles = findComposeFiles(DOCKER_DIR);
   const containers: ContainerInfo[] = [];
 
   for (const filePath of composeFiles) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      const parsed = yaml.load(content);
+      const parsed = loadYaml(content);
 
       if (parsed == null || typeof parsed !== 'object') {
-        console.warn(`Skipping ${filePath}: invalid compose file structure`);
+        logger.warn({ filePath }, 'Skipping compose file with invalid structure');
         continue;
       }
 
       const compose = parsed as ComposeFile;
 
       if (!compose.services || typeof compose.services !== 'object') {
-        console.warn(`Skipping ${filePath}: invalid compose file structure`);
+        logger.warn({ filePath }, 'Skipping compose file with invalid structure');
         continue;
       }
 
@@ -154,6 +155,7 @@ export function scanDockerDir(): ContainerInfo[] {
           latestVersion: null,
           publishedAt: null,
           status: 'unknown',
+          checkIssue: null,
           breakingChangeReason: null,
           releaseUrl: null,
           releaseNotes: null,
@@ -162,7 +164,7 @@ export function scanDockerDir(): ContainerInfo[] {
         });
       }
     } catch (err) {
-      console.warn(`Skipping ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn({ filePath, error: err }, 'Skipping unreadable compose file');
     }
   }
 

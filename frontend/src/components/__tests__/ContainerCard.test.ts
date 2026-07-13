@@ -14,6 +14,7 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     latestVersion: '4.1.0',
     publishedAt: '2024-06-01T00:00:00Z',
     status: 'up-to-date',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.1.0',
     releaseNotes: null,
@@ -33,10 +34,8 @@ describe('ContainerCard – icon', () => {
     });
     const img = w.find('img');
     expect(img.exists()).toBe(true);
-    expect(img.attributes('src')).toBe(
-      '/icons/sonarr.png',
-    );
-    expect(img.attributes('alt')).toBe('sonarr');
+    expect(img.attributes('src')).toBe('/icons/sonarr.png');
+    expect(img.attributes('alt')).toBe('');
   });
 
   it('falls back to Package icon when image fails to load', async () => {
@@ -59,13 +58,28 @@ describe('ContainerCard – icon', () => {
       props: { container: makeContainer({ name: 'adguardhome' }) },
       global: { stubs },
     });
-    expect(w.find('img').attributes('src')).toBe(
-      '/icons/adguard-home.png',
-    );
+    expect(w.find('img').attributes('src')).toBe('/icons/adguard-home.png');
   });
 });
 
 describe('ContainerCard – rendering', () => {
+  it('shows a local check issue', () => {
+    const w = mount(ContainerCard, {
+      props: {
+        container: makeContainer({
+          status: 'unknown',
+          checkIssue: {
+            code: 'network',
+            message: 'GitHub could not be reached.',
+            retryAt: null,
+          },
+        }),
+      },
+      global: { stubs },
+    });
+    expect(w.text()).toContain('GitHub could not be reached.');
+  });
+
   it('displays the container name', () => {
     const w = mount(ContainerCard, { props: { container: makeContainer() }, global: { stubs } });
     expect(w.text()).toContain('sonarr');

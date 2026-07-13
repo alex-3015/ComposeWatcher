@@ -3,6 +3,7 @@ dist/
 coverage/
 .env
 *.log
+*.tsbuildinfo
 .DS_Store
 data/
 .claude/

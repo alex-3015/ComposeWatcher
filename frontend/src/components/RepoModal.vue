@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { X, GitBranch } from 'lucide-vue-next';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { X, GitBranch } from '@lucide/vue';
 import type { ContainerInfo } from '../types';
 import { UI } from '../theme';
 
@@ -17,6 +17,9 @@ const emit = defineEmits<{
 const value = ref(props.container.githubRepo ?? '');
 const saving = ref(false);
 const error = ref('');
+const modal = ref<HTMLElement | null>(null);
+const input = ref<HTMLInputElement | null>(null);
+let previouslyFocused: HTMLElement | null = null;
 
 const REPO_FORMAT = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
@@ -44,21 +47,70 @@ function handleRemove() {
   saving.value = true;
   emit('save', props.container.id, null);
 }
+
+function close(): void {
+  if (!saving.value) emit('close');
+}
+
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    close();
+    return;
+  }
+  if (event.key !== 'Tab' || !modal.value) return;
+  const focusable = [
+    ...modal.value.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)'),
+  ];
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+onMounted(async () => {
+  previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  await nextTick();
+  input.value?.focus();
+});
+
+onBeforeUnmount(() => previouslyFocused?.focus());
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    @click.self="close"
+    @keydown="handleKeydown"
+  >
     <div
+      ref="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="repo-modal-title"
       :class="`${UI.cardBg} border ${UI.borderSubtle} rounded-xl shadow-2xl w-full max-w-md mx-4 p-6`"
     >
       <!-- Title -->
       <div class="flex items-center justify-between mb-5">
         <div class="flex items-center gap-2">
-          <GitBranch :size="18" :class="UI.primaryText" />
-          <h2 :class="`text-base font-semibold ${UI.textPrimary}`">Link GitHub Repository</h2>
+          <GitBranch :size="18" :class="UI.primaryText" aria-hidden="true" />
+          <h2 id="repo-modal-title" :class="`text-base font-semibold ${UI.textPrimary}`">
+            Link GitHub Repository
+          </h2>
         </div>
-        <button :class="`${UI.textMuted} ${UI.textHover} transition-colors`" @click="emit('close')">
-          <X :size="18" />
+        <button
+          :disabled="saving"
+          aria-label="Close repository dialog"
+          :class="`${UI.textMuted} ${UI.textHover} disabled:opacity-50 transition-colors`"
+          @click="close"
+        >
+          <X :size="18" aria-hidden="true" />
         </button>
       </div>
 
@@ -73,17 +125,24 @@ function handleRemove() {
 
       <!-- Input -->
       <div class="mb-5">
-        <label :class="`block text-sm ${UI.textSecondary} mb-1.5`">GitHub Repository</label>
+        <label for="github-repository" :class="`block text-sm ${UI.textSecondary} mb-1.5`">
+          GitHub Repository
+        </label>
         <input
+          id="github-repository"
+          ref="input"
           v-model="value"
           type="text"
           placeholder="owner/repository"
-          autofocus
+          :aria-invalid="Boolean(error)"
+          :aria-describedby="error ? 'repo-error' : undefined"
           :class="`w-full ${UI.inputBg} border ${UI.borderInput} rounded-lg px-3 py-2.5 ${UI.textPrimary} placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-colors`"
           @input="error = ''"
           @keydown.enter="handleSave"
         />
-        <p v-if="error" :class="`${UI.errorText} text-xs mt-1.5`">{{ error }}</p>
+        <p v-if="error" id="repo-error" role="alert" :class="`${UI.errorText} text-xs mt-1.5`">
+          {{ error }}
+        </p>
       </div>
 
       <!-- Actions -->
@@ -104,8 +163,9 @@ function handleRemove() {
           Remove
         </button>
         <button
+          :disabled="saving"
           :class="`px-4 py-2.5 text-sm ${UI.textSecondary} ${UI.textHover} border ${UI.borderSubtle} rounded-lg transition-colors`"
-          @click="emit('close')"
+          @click="close"
         >
           Cancel
         </button>

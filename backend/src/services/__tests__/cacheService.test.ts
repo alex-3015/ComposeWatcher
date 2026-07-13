@@ -43,6 +43,7 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     latestVersion: '4.0.0',
     publishedAt: '2024-01-01T00:00:00Z',
     status: 'up-to-date',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
     releaseNotes: null,
@@ -62,7 +63,7 @@ beforeEach(() => {
 // ────────────────────────────────────────────────────────────────────────────
 describe('loadCachedContainers', () => {
   it('returns parsed data when cache file exists and is valid', () => {
-    const cached = { containers: [makeContainer()], ts: 1700000000000 };
+    const cached = { schemaVersion: 2 as const, containers: [makeContainer()], ts: 1700000000000 };
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockReturnValue(JSON.stringify(cached));
 
@@ -103,6 +104,36 @@ describe('loadCachedContainers', () => {
 
     const result = loadCachedContainers();
     expect(result).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('returns null when a schema-v2 container is incomplete', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(
+      JSON.stringify({ schemaVersion: 2, containers: [{ id: 'incomplete' }], ts: 123 }),
+    );
+
+    expect(loadCachedContainers()).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('returns null when a cached check issue has an unknown code', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        schemaVersion: 2,
+        containers: [
+          makeContainer({
+            checkIssue: { code: 'network', message: 'Network error', retryAt: null },
+          }),
+        ],
+        ts: 123,
+      }).replace('network', 'unsupported'),
+    );
+
+    expect(loadCachedContainers()).toBeNull();
     spy.mockRestore();
   });
 
@@ -267,7 +298,10 @@ describe('ensureDataDir caching', () => {
 describe('round-trip', () => {
   it('save then load returns equivalent container data', () => {
     mockFs.existsSync.mockReturnValue(true);
-    const containers = [makeContainer(), makeContainer({ id: 'compose.yml::radarr', name: 'radarr' })];
+    const containers = [
+      makeContainer(),
+      makeContainer({ id: 'compose.yml::radarr', name: 'radarr' }),
+    ];
 
     let writtenData = '';
     mockFs.writeFileSync.mockImplementation((_p: string, data: string) => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { ExternalLink, GitBranch, AlertTriangle, Package } from 'lucide-vue-next';
+import { ExternalLink, GitBranch, AlertTriangle, Package } from '@lucide/vue';
 import type { ContainerInfo } from '../types';
 import StatusBadge from './StatusBadge.vue';
 import ReleaseNotes from './ReleaseNotes.vue';
@@ -52,11 +52,11 @@ function formatDate(iso: string | null): string {
         <img
           v-if="!iconFailed"
           :src="iconUrl"
-          :alt="container.name"
+          alt=""
           class="w-5 h-5 shrink-0 rounded"
           @error="iconFailed = true"
         />
-        <Package v-else :size="16" :class="`${UI.textSecondary} shrink-0`" />
+        <Package v-else :size="16" :class="`${UI.textSecondary} shrink-0`" aria-hidden="true" />
         <div class="min-w-0">
           <h3 :class="`${UI.textPrimary} font-semibold truncate`">{{ container.name }}</h3>
           <p :class="`${UI.textMuted} text-xs font-mono truncate`">{{ container.image }}</p>
@@ -101,6 +101,17 @@ function formatDate(iso: string | null): string {
       </p>
     </div>
 
+    <div
+      v-if="container.checkIssue"
+      :class="`flex items-start gap-2 ${UI.inputBg} border ${UI.borderSubtle} rounded-lg px-3 py-2.5`"
+      role="status"
+    >
+      <AlertTriangle :size="14" :class="`${UI.textSecondary} shrink-0 mt-0.5`" aria-hidden="true" />
+      <p :class="`${UI.textSecondary} text-xs leading-relaxed break-words min-w-0`">
+        {{ container.checkIssue.message }}
+      </p>
+    </div>
+
     <!-- Release Notes -->
     <ReleaseNotes :release-notes="container.releaseNotes" :release-name="container.releaseName" />
 
@@ -118,14 +129,15 @@ function formatDate(iso: string | null): string {
             rel="noopener noreferrer"
             :class="`flex items-center gap-1 text-xs ${UI.textSecondary} hover:text-white transition-colors`"
           >
-            <ExternalLink :size="12" />
+            <ExternalLink :size="12" aria-hidden="true" />
             Release
           </a>
           <button
+            :aria-label="`Edit GitHub repository for ${container.name}`"
             :class="`flex items-center gap-1 text-xs ${UI.primaryText} ${UI.primaryTextHover} transition-colors max-w-[140px]`"
             @click="emit('linkRepo', container)"
           >
-            <GitBranch :size="12" class="shrink-0" />
+            <GitBranch :size="12" class="shrink-0" aria-hidden="true" />
             <span class="truncate">{{ container.githubRepo ?? 'Link repo' }}</span>
           </button>
         </div>

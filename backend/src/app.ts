@@ -1,146 +1,317 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import type { ContainerInfo } from './types.js';
+import type { ApiError, ContainerInfo, ContainersMeta } from './types.js';
 import { scanDockerDir } from './services/dockerService.js';
 import { enrichWithGithubData } from './services/githubService.js';
 import { loadConfig, setRepoMapping } from './services/configService.js';
 import { loadCachedContainers, saveCachedContainers } from './services/cacheService.js';
 import { downloadIconsForContainers } from './services/iconService.js';
 
-interface GetContainersResult {
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const BACKGROUND_RETRY_MS = 30_000;
+const REPO_REGEX = '^[a-zA-Z0-9][a-zA-Z0-9._-]*\\/[a-zA-Z0-9][a-zA-Z0-9._-]*$';
+
+interface CacheState {
   data: ContainerInfo[];
-  stale: boolean;
+  ts: number;
 }
 
+interface GetContainersResult {
+  data: ContainerInfo[];
+  meta: ContainersMeta;
+}
+
+const apiErrorSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['code', 'message'],
+  properties: {
+    code: { type: 'string' },
+    message: { type: 'string' },
+  },
+} as const;
+
+const checkIssueSchema = {
+  anyOf: [
+    { type: 'null' },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['code', 'message', 'retryAt'],
+      properties: {
+        code: {
+          type: 'string',
+          enum: [
+            'repo-not-found',
+            'rate-limited',
+            'timeout',
+            'network',
+            'github-error',
+            'invalid-release',
+            'unverifiable-version',
+          ],
+        },
+        message: { type: 'string' },
+        retryAt: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+    },
+  ],
+} as const;
+
+const nullableStringSchema = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
+
+const containerSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'name',
+    'image',
+    'currentVersion',
+    'composeFile',
+    'githubRepo',
+    'latestVersion',
+    'publishedAt',
+    'status',
+    'checkIssue',
+    'breakingChangeReason',
+    'releaseUrl',
+    'releaseNotes',
+    'releaseName',
+    'lastChecked',
+  ],
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    image: { type: 'string' },
+    currentVersion: { type: 'string' },
+    composeFile: { type: 'string' },
+    githubRepo: nullableStringSchema,
+    latestVersion: nullableStringSchema,
+    publishedAt: nullableStringSchema,
+    status: {
+      type: 'string',
+      enum: ['up-to-date', 'update-available', 'breaking-change', 'unknown', 'no-repo'],
+    },
+    checkIssue: checkIssueSchema,
+    breakingChangeReason: nullableStringSchema,
+    releaseUrl: nullableStringSchema,
+    releaseNotes: nullableStringSchema,
+    releaseName: nullableStringSchema,
+    lastChecked: nullableStringSchema,
+  },
+} as const;
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function publicError(code: string, message: string): { error: ApiError } {
+  return { error: { code, message } };
+}
+
+/** Builds the Fastify application without binding a network port. */
 export async function buildApp(opts?: { logger?: boolean }) {
-  const app = Fastify({ logger: opts?.logger ?? true });
-
-  const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
-  await app.register(cors, {
-    origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(',').map((s) => s.trim()),
+  const app = Fastify({
+    logger: opts?.logger ?? true,
+    ajv: { customOptions: { removeAdditional: false } },
   });
+  const corsOrigin = process.env.CORS_ORIGIN?.trim();
+  if (corsOrigin) {
+    await app.register(cors, {
+      origin: corsOrigin === '*' ? true : corsOrigin.split(',').map((origin) => origin.trim()),
+    });
+  }
 
-  let cache: { data: ContainerInfo[]; ts: number } | null = null;
+  let cache: CacheState | null = null;
   let pendingRefresh: Promise<ContainerInfo[]> | null = null;
-  const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS) || 5 * 60 * 1000;
+  let lastRefreshError: ApiError | null = null;
+  let lastRefreshAttemptAt = 0;
+  let skipDiskCache = false;
+  const cacheTtlMs = parsePositiveInteger(process.env.CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
 
-  /** Run the full scan+enrich pipeline and persist results. */
   async function refreshContainers(): Promise<ContainerInfo[]> {
-    const config = loadConfig();
-    let containers = scanDockerDir();
-
-    containers = containers.map((c) => ({
-      ...c,
-      githubRepo: config.repoMappings[c.id] ?? c.githubRepo,
+    const config = loadConfig(app.log);
+    const scanned = scanDockerDir(app.log).map((container) => ({
+      ...container,
+      githubRepo: config.repoMappings[container.id] ?? container.githubRepo,
     }));
-
-    const enriched = await enrichWithGithubData(containers);
-    cache = { data: enriched, ts: Date.now() };
+    const enriched = await enrichWithGithubData(scanned, app.log);
+    const refreshedAt = Date.now();
+    cache = { data: enriched, ts: refreshedAt };
+    lastRefreshError = null;
+    skipDiskCache = false;
     saveCachedContainers(enriched);
-    downloadIconsForContainers(enriched).catch((err) =>
-      console.warn('Icon download failed:', err),
-    );
+    void downloadIconsForContainers(enriched).catch((error: unknown) => {
+      app.log.warn({ error }, 'Icon download failed');
+    });
     return enriched;
   }
 
-  async function getContainers(forceRefresh = false): Promise<GetContainersResult> {
-    const now = Date.now();
-
-    // Memory cache hit
-    if (!forceRefresh && cache && now - cache.ts < CACHE_TTL_MS) {
-      return { data: cache.data, stale: false };
-    }
-
-    // Coalesce concurrent refresh requests into a single in-flight call
-    if (pendingRefresh) {
-      const data = await pendingRefresh;
-      return { data, stale: false };
-    }
-
-    // Cold start: try disk cache and return stale data while refreshing in background
-    if (!forceRefresh && !cache) {
-      const diskData = loadCachedContainers();
-      if (diskData) {
-        cache = { data: diskData.containers, ts: diskData.ts };
-
-        // Fire background refresh (coalesced via pendingRefresh)
-        pendingRefresh = refreshContainers();
-        pendingRefresh
-          .catch((err) => console.warn('Background refresh failed:', err))
-          .finally(() => {
-            pendingRefresh = null;
-          });
-
-        return { data: diskData.containers, stale: true };
-      }
-    }
-
-    // Synchronous refresh (first-ever start or force refresh)
-    pendingRefresh = refreshContainers();
-    try {
-      const data = await pendingRefresh;
-      return { data, stale: false };
-    } finally {
-      pendingRefresh = null;
-    }
+  function startRefresh(): Promise<ContainerInfo[]> {
+    if (pendingRefresh) return pendingRefresh;
+    lastRefreshAttemptAt = Date.now();
+    const refresh = refreshContainers().catch((error: unknown) => {
+      lastRefreshError = { code: 'REFRESH_FAILED', message: 'Container refresh failed.' };
+      throw error;
+    });
+    pendingRefresh = refresh;
+    void refresh
+      .finally(() => {
+        if (pendingRefresh === refresh) pendingRefresh = null;
+      })
+      .catch(() => undefined);
+    return refresh;
   }
 
-  const REPO_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+  function resultFromCache(stale: boolean): GetContainersResult {
+    if (!cache) throw new Error('Cache is not available');
+    return {
+      data: cache.data,
+      meta: {
+        stale,
+        refreshing: pendingRefresh !== null,
+        refreshedAt: new Date(cache.ts).toISOString(),
+        refreshError: lastRefreshError,
+      },
+    };
+  }
 
-  app.get('/api/containers', async (req, reply) => {
-    try {
-      const { refresh } = req.query as { refresh?: string };
-      const result = await getContainers(refresh === 'true');
-      if (result.stale) {
-        void reply.header('X-Data-Stale', 'true');
-      }
-      return reply.send(result.data);
-    } catch (err) {
-      req.log.error(err);
-      return reply.status(500).send({ error: 'Internal server error' });
+  async function getContainers(forceRefresh = false): Promise<GetContainersResult> {
+    if (forceRefresh) {
+      await startRefresh();
+      return resultFromCache(false);
     }
+
+    if (!cache && !skipDiskCache) {
+      const diskData = loadCachedContainers(app.log);
+      if (diskData) cache = { data: diskData.containers, ts: diskData.ts };
+    }
+
+    if (cache) {
+      const stale = Date.now() - cache.ts >= cacheTtlMs;
+      const retryDue =
+        lastRefreshError === null || Date.now() - lastRefreshAttemptAt >= BACKGROUND_RETRY_MS;
+      if (stale && !pendingRefresh && retryDue) {
+        void startRefresh().catch((error: unknown) => {
+          app.log.warn({ error }, 'Background refresh failed');
+        });
+      }
+      return resultFromCache(stale);
+    }
+
+    await startRefresh();
+    return resultFromCache(false);
+  }
+
+  app.setErrorHandler((error, request, reply) => {
+    if (typeof error === 'object' && error !== null && 'validation' in error && error.validation) {
+      return reply.status(400).send(publicError('VALIDATION_ERROR', 'Invalid request.'));
+    }
+    request.log.error(error);
+    return reply.status(500).send(publicError('INTERNAL_ERROR', 'Internal server error.'));
   });
+
+  app.get(
+    '/api/health',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['status'],
+                properties: { status: { type: 'string', const: 'ok' } },
+              },
+            },
+          },
+        },
+      },
+    },
+    async () => ({ data: { status: 'ok' as const } }),
+  );
+
+  app.get<{ Querystring: { refresh?: string } }>(
+    '/api/containers',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { refresh: { type: 'string', enum: ['true', 'false'] } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['data', 'meta'],
+            properties: {
+              data: { type: 'array', items: containerSchema },
+              meta: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['stale', 'refreshing', 'refreshedAt', 'refreshError'],
+                properties: {
+                  stale: { type: 'boolean' },
+                  refreshing: { type: 'boolean' },
+                  refreshedAt: nullableStringSchema,
+                  refreshError: { anyOf: [{ type: 'null' }, apiErrorSchema] },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request) => getContainers(request.query.refresh === 'true'),
+  );
 
   app.post<{ Params: { id: string }; Body: { repo: string | null } }>(
     '/api/containers/:id/repo',
-    async (req, reply) => {
-      try {
-        const { id } = req.params;
-        const decodedId = decodeURIComponent(id);
-
-        if (!decodedId.includes('::')) {
-          return reply.status(400).send({
-            error:
-              'Invalid container ID: must contain "::" separator (e.g. "compose.yml::service")',
-          });
-        }
-
-        const { repo } = req.body;
-        if (repo !== null && !REPO_REGEX.test(repo)) {
-          return reply.status(400).send({
-            error: 'Invalid repo format: must be "owner/repo" (e.g. "linuxserver/sonarr")',
-          });
-        }
-
-        setRepoMapping(decodedId, repo);
-        cache = null;
-        return reply.send({ ok: true });
-      } catch (err) {
-        req.log.error(err);
-        return reply.status(500).send({ error: 'Internal server error' });
+    {
+      schema: {
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id'],
+          properties: { id: { type: 'string', minLength: 4, maxLength: 1024, pattern: '::' } },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['repo'],
+          properties: {
+            repo: {
+              anyOf: [
+                { type: 'null' },
+                { type: 'string', minLength: 3, maxLength: 200, pattern: REPO_REGEX },
+              ],
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params;
+      const knownContainers = cache?.data ?? scanDockerDir(app.log);
+      if (!knownContainers.some((container) => container.id === id)) {
+        return reply.status(404).send(publicError('CONTAINER_NOT_FOUND', 'Container not found.'));
       }
+
+      setRepoMapping(id, request.body.repo, app.log);
+      cache = null;
+      skipDiskCache = true;
+      return reply.send({ data: { id, githubRepo: request.body.repo } });
     },
   );
 
-  app.get('/api/config', async (req, reply) => {
-    try {
-      const config = loadConfig();
-      return reply.send({ repoMappings: config.repoMappings });
-    } catch (err) {
-      req.log.error(err);
-      return reply.status(500).send({ error: 'Internal server error' });
-    }
-  });
+  app.get('/api/config', async () => ({ data: loadConfig(app.log) }));
 
   return app;
 }

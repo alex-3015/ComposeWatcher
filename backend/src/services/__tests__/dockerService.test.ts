@@ -374,7 +374,8 @@ describe('scanDockerDir – YAML validation', () => {
 
     expect(scanDockerDir()).toHaveLength(0);
     expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('invalid compose file structure'),
+      'Skipping compose file with invalid structure',
+      expect.objectContaining({ filePath: expect.any(String) }),
     );
   });
 
@@ -393,6 +394,9 @@ describe('scanDockerDir – YAML validation', () => {
 
     scanDockerDir();
 
-    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/^Skipping .+: .+/));
+    expect(console.warn).toHaveBeenCalledWith(
+      'Skipping unreadable compose file',
+      expect.objectContaining({ filePath: expect.any(String), error: expect.any(Error) }),
+    );
   });
 });

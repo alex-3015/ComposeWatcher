@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import RepoModal from '../RepoModal.vue';
 import type { ContainerInfo } from '../../types';
 
@@ -14,6 +14,7 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     latestVersion: null,
     publishedAt: null,
     status: 'no-repo',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: null,
     releaseNotes: null,
@@ -35,6 +36,17 @@ function findBtn(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 describe('RepoModal – rendering', () => {
+  it('exposes accessible dialog semantics and labels', () => {
+    const w = mount(RepoModal, { props: { container: makeContainer() }, global: { stubs } });
+    const dialog = w.get('[role="dialog"]');
+    expect(dialog.attributes('aria-modal')).toBe('true');
+    expect(dialog.attributes('aria-labelledby')).toBe('repo-modal-title');
+    expect(w.get('label').attributes('for')).toBe('github-repository');
+    expect(w.get('button[aria-label="Close repository dialog"]').attributes('aria-label')).toBe(
+      'Close repository dialog',
+    );
+  });
+
   it('displays the container name', () => {
     const w = mount(RepoModal, { props: { container: makeContainer() }, global: { stubs } });
     expect(w.text()).toContain('sonarr');
@@ -132,6 +144,28 @@ describe('RepoModal – validation', () => {
 });
 
 describe('RepoModal – events', () => {
+  it('closes when Escape is pressed', async () => {
+    const w = mount(RepoModal, { props: { container: makeContainer() }, global: { stubs } });
+    await w.get('.fixed.inset-0').trigger('keydown', { key: 'Escape' });
+    expect(w.emitted('close')).toBeTruthy();
+  });
+
+  it('wraps focus from the last to the first control', async () => {
+    const w = mount(RepoModal, {
+      attachTo: document.body,
+      props: { container: makeContainer() },
+      global: { stubs },
+    });
+    await flushPromises();
+    const buttons = w.findAll('button');
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    (last.element as HTMLButtonElement).focus();
+    await last.trigger('keydown', { key: 'Tab' });
+    expect(document.activeElement).toBe(first.element);
+    w.unmount();
+  });
+
   it('emits "save" with containerId and repo on valid save', async () => {
     const w = mount(RepoModal, { props: { container: makeContainer() }, global: { stubs } });
     await w.find('input').setValue('linuxserver/sonarr');

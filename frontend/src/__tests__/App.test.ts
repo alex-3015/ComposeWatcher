@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import App from '../App.vue';
-import type { ContainerInfo } from '../types';
+import type { ContainersMeta, ContainerInfo } from '../types';
 
 // ── fetch mock ────────────────────────────────────────────────────────────────
 const fetchMock = vi.fn();
@@ -21,6 +21,7 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     latestVersion: '4.0.0',
     publishedAt: '2024-01-01T00:00:00Z',
     status: 'up-to-date',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
     releaseNotes: null,
@@ -34,13 +35,23 @@ function mockHeaders(entries: Record<string, string> = {}) {
   return { get: (name: string) => entries[name] ?? null };
 }
 
-function mockContainersResponse(containers: ContainerInfo[], headers: Record<string, string> = {}) {
+function mockContainersResponse(containers: ContainerInfo[], meta: Partial<ContainersMeta> = {}) {
   fetchMock.mockResolvedValueOnce({
     ok: true,
     status: 200,
-    json: () => Promise.resolve(containers),
+    json: () =>
+      Promise.resolve({
+        data: containers,
+        meta: {
+          stale: false,
+          refreshing: false,
+          refreshedAt: '2026-07-13T14:00:00.000Z',
+          refreshError: null,
+          ...meta,
+        },
+      }),
     text: () => Promise.resolve(''),
-    headers: mockHeaders(headers),
+    headers: mockHeaders(),
   });
 }
 
@@ -48,7 +59,8 @@ function mockErrorResponse() {
   fetchMock.mockResolvedValueOnce({
     ok: false,
     status: 500,
-    json: () => Promise.resolve([]),
+    json: () =>
+      Promise.resolve({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error.' } }),
     text: () => Promise.resolve('Server error'),
     headers: mockHeaders(),
   });
@@ -454,6 +466,28 @@ describe('App – grouping', () => {
 // Refresh
 // ────────────────────────────────────────────────────────────────────────────
 describe('App – refresh', () => {
+  it('aborts an obsolete request when a refresh starts', async () => {
+    let initialSignal: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce((_url: string, options: RequestInit) => {
+      initialSignal = options.signal as AbortSignal;
+      return new Promise((_resolve, reject) => {
+        initialSignal?.addEventListener('abort', () =>
+          reject(new DOMException('aborted', 'AbortError')),
+        );
+      });
+    });
+    mockContainersResponse([makeContainer()]);
+    const w = mount(App, { global: globalStubs });
+    await w.vm.$nextTick();
+
+    const refreshBtn = w.findAll('button').find((button) => button.text().includes('Refresh'));
+    await refreshBtn!.trigger('click');
+    await flushPromises();
+
+    expect(initialSignal?.aborted).toBe(true);
+    expect(w.text()).toContain('sonarr');
+  });
+
   it('Refresh button calls API with ?refresh=true', async () => {
     mockContainersResponse([makeContainer()]);
     mockContainersResponse([makeContainer()]);
@@ -476,6 +510,49 @@ describe('App – refresh', () => {
 
     const [firstUrl] = fetchMock.mock.calls[0];
     expect(firstUrl).not.toContain('refresh=true');
+  });
+});
+
+describe('App – refresh metadata and diagnostics', () => {
+  it('shows when cached data is stale', async () => {
+    mockContainersResponse([makeContainer()], { stale: true });
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    expect(w.text()).toContain('Showing cached data');
+  });
+
+  it('shows a backend refresh error without hiding cached containers', async () => {
+    mockContainersResponse([makeContainer()], {
+      stale: true,
+      refreshError: { code: 'REFRESH_FAILED', message: 'Container refresh failed.' },
+    });
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    expect(w.text()).toContain('Refresh failed: Container refresh failed.');
+    expect(w.text()).toContain('sonarr');
+  });
+
+  it('aggregates and dismisses rate-limit diagnostics', async () => {
+    const checkIssue = {
+      code: 'rate-limited' as const,
+      message: 'GitHub API rate limit reached.',
+      retryAt: '2026-07-13T16:00:00.000Z',
+    };
+    mockContainersResponse([
+      makeContainer({ id: 'a::one', checkIssue }),
+      makeContainer({ id: 'b::two', checkIssue }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    expect(w.text()).toContain('Affected containers: 2');
+    const dismiss = w
+      .findAll('button')
+      .find((button) => button.attributes('aria-label')?.includes('rate-limited'));
+    await dismiss!.trigger('click');
+    expect(w.text()).not.toContain('Affected containers: 2');
   });
 });
 
@@ -606,7 +683,10 @@ describe('App – repo modal', () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ ok: true }),
+      json: () =>
+        Promise.resolve({
+          data: { id: 'docker-compose.yml::sonarr', githubRepo: 'myorg/myapp' },
+        }),
       text: () => Promise.resolve(''),
     });
     mockContainersResponse([makeContainer({ githubRepo: 'myorg/myapp', status: 'unknown' })]);

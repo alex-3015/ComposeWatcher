@@ -13,6 +13,9 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 - Detects **breaking changes** (major version bumps, keywords like "breaking change", "migration required" in release notes)
 - Filter containers by status: up-to-date, update available, breaking change, unknown
 - Persistent repository mappings stored in a JSON config file
+- Deduplicated, concurrency-limited GitHub checks for fast refreshes on larger installations
+- Stale-while-revalidate caching that keeps the dashboard responsive during background checks
+- Actionable diagnostics for rate limits, network failures, invalid releases, and unverifiable tags
 
 ![screenshot.png](screenshot/screenshot.png)
 
@@ -23,7 +26,7 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 | `up-to-date` | Current tag matches latest release |
 | `update-available` | Newer release exists (minor/patch) |
 | `breaking-change` | Major version bump or breaking change detected in release notes |
-| `unknown` | Could not determine status (e.g. non-semver tags) |
+| `unknown` | Could not determine status (e.g. `latest`, digests, variables, non-comparable tags, or a failed GitHub check) |
 | `no-repo` | No GitHub repository linked yet |
 
 ## Getting Started
@@ -61,12 +64,13 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 | `DATA_DIR` | `/data` | Path for the persistent config JSON |
 | `PORT` | `3000` | Backend server port |
 | `GITHUB_TOKEN` | _(none)_ | GitHub personal access token — raises API rate limit from 60 to 5 000 req/hour |
-| `CORS_ORIGIN` | `*` | Allowed CORS origins. `*` allows all. Comma-separated list for multiple origins (e.g. `http://localhost:3000,https://my.domain`) |
+| `CORS_ORIGIN` | _(disabled)_ | Optional comma-separated CORS allowlist. Use `*` only when intentionally exposing the backend cross-origin. |
 | `CACHE_TTL_MS` | `300000` | Cache time-to-live in milliseconds (default: 5 minutes) |
+| `GITHUB_CONCURRENCY` | `5` | Maximum concurrent GitHub requests. Values are clamped to the range 1–20. |
 
 ### GitHub API Rate Limits
 
-Without a token, GitHub's API allows only **60 requests per hour per IP address**. Each container with a linked repository consumes one request on every refresh. If you have many containers or click Refresh frequently, requests will start failing silently and affected containers will show status `unknown`.
+Without a token, GitHub's API allows only **60 requests per hour per IP address**. Each unique linked repository consumes at most one request per refresh. When the limit is reached, affected cards show a reason and the dashboard displays a combined warning.
 
 **Setting a token is strongly recommended for any real-world deployment.**
 
@@ -86,29 +90,67 @@ environment:
 | `GET` | `/api/containers?refresh=true` | Bypasses cache and fetches fresh data |
 | `POST` | `/api/containers/:id/repo` | Link or unlink a GitHub repo (`{ repo: "owner/repo" \| null }`) |
 | `GET` | `/api/config` | Returns current repository mappings |
+| `GET` | `/api/health` | Lightweight liveness check; never scans files or calls GitHub |
+
+All successful endpoints use a `{ "data": ... }` envelope. Container responses also include cache metadata:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "stale": false,
+    "refreshing": false,
+    "refreshedAt": "2026-07-13T14:00:00.000Z",
+    "refreshError": null
+  }
+}
+```
+
+Repository mapping response:
+
+```json
+{ "data": { "id": "sonarr/docker-compose.yml::sonarr", "githubRepo": "linuxserver/sonarr" } }
+```
+
+Configuration and health responses:
+
+```json
+{ "data": { "repoMappings": {} } }
+{ "data": { "status": "ok" } }
+```
+
+Errors are stable, machine-readable objects:
+
+```json
+{ "error": { "code": "VALIDATION_ERROR", "message": "Invalid request." } }
+```
 
 ## How It Works
 
 1. The backend scans all `docker-compose*.yml` files in the configured `DOCKER_DIR`
 2. For each container image, it attempts to infer the GitHub repository from the image name
-3. If a repo is linked, it fetches the latest releases from the GitHub API
-4. The current image tag is compared against the latest release using semver
+3. Linked repositories are deduplicated and checked through a bounded parallel worker pool
+4. Comparable semantic versions are evaluated; ambiguous tags remain `unknown` instead of producing false update alerts
 5. Release notes are scanned for breaking change indicators
-6. Results are cached (default: 5 minutes, configurable via `CACHE_TTL_MS`) and served to the frontend
+6. Fresh results are cached in memory and on disk; expired results are served immediately while revalidation runs in the background
 
 ## Persistent Storage
 
-Repository mappings are stored in a Docker volume at `/data/config.json`. This persists across container restarts. Config writes are atomic (write to tmp file + rename) to prevent corruption on unexpected shutdowns.
+Repository mappings are stored in a Docker volume at `/data/config.json`. This persists across container restarts. Config writes are atomic (write to tmp file + rename) to prevent corruption on unexpected shutdowns. The separate result cache is versioned and is rebuilt automatically when an incompatible format is found.
 
 ## Container Security
 
 The container runs with a non-root user (`appuser`) and includes:
 
 - **tini** as PID 1 for proper signal forwarding and zombie process reaping
-- **HEALTHCHECK** on `/api/containers` (30s interval)
+- **HEALTHCHECK** on `/api/health` (30s interval, no external dependencies)
 - **Security headers** via nginx: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`
 
 Graceful shutdown is supported — `docker stop` cleanly terminates both nginx and the Node.js backend.
+
+## Browser Support
+
+The Tailwind CSS 4 frontend targets Safari 16.4+, Chrome 111+, and Firefox 128+.
 
 ## License
 

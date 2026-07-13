@@ -43,6 +43,7 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     latestVersion: '4.0.0',
     publishedAt: '2024-01-01T00:00:00Z',
     status: 'up-to-date',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: null,
     releaseNotes: null,
@@ -155,8 +156,8 @@ describe('iconExistsLocally', () => {
   });
 
   it('returns false when icon file does not exist', () => {
-    mockFs.existsSync.mockImplementation((p: string) =>
-      p === ICONS_DIR || p === path.resolve(ICONS_DIR),
+    mockFs.existsSync.mockImplementation(
+      (p: string) => p === ICONS_DIR || p === path.resolve(ICONS_DIR),
     );
     expect(iconExistsLocally('sonarr')).toBe(false);
   });
@@ -238,10 +239,7 @@ describe('downloadIcon', () => {
   });
 
   it('returns false when content-length exceeds 1 MB', async () => {
-    vi.stubGlobal(
-      'fetch',
-      mockFetchResponse({ contentLength: String(2 * 1024 * 1024) }),
-    );
+    vi.stubGlobal('fetch', mockFetchResponse({ contentLength: String(2 * 1024 * 1024) }));
     mockFs.existsSync.mockReturnValue(true);
 
     const result = await downloadIcon('sonarr');
@@ -250,10 +248,7 @@ describe('downloadIcon', () => {
 
   it('returns false when actual body exceeds 1 MB', async () => {
     const largeBody = new ArrayBuffer(1024 * 1024 + 1);
-    vi.stubGlobal(
-      'fetch',
-      mockFetchResponse({ body: largeBody, contentLength: '0' }),
-    );
+    vi.stubGlobal('fetch', mockFetchResponse({ body: largeBody, contentLength: '0' }));
     mockFs.existsSync.mockReturnValue(true);
 
     const result = await downloadIcon('sonarr');

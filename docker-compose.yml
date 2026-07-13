@@ -10,7 +10,9 @@ services:
       - DOCKER_DIR=/docker
       - DATA_DIR=/data
       - PORT=3000
+      - GITHUB_CONCURRENCY=5
       # - GITHUB_TOKEN=ghp_your_token_here   # optional: raises API limit from 60 to 5000 req/hour
+      # - CORS_ORIGIN=https://compose.example.com   # optional: disabled by default
     volumes:
       - C:/Program Files/Docker:/docker:ro   # <-- Change this to your actual docker folder
       - composewatcher_data:/data

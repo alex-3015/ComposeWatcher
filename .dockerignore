@@ -3,4 +3,8 @@
 .claude
 dist
 node_modules
+**/dist
+**/node_modules
+**/coverage
+**/*.tsbuildinfo
 *.tar

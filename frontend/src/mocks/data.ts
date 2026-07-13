@@ -11,6 +11,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: '4.0.9',
     publishedAt: '2024-11-01T10:00:00Z',
     status: 'up-to-date',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/docker-sonarr/releases/tag/4.0.9',
     releaseNotes:
@@ -28,6 +29,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: '5.11.0',
     publishedAt: '2025-01-15T08:30:00Z',
     status: 'update-available',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/linuxserver/docker-radarr/releases/tag/5.11.0',
     releaseNotes:
@@ -45,6 +47,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: '2.0.0',
     publishedAt: '2025-02-20T14:00:00Z',
     status: 'breaking-change',
+    checkIssue: null,
     breakingChangeReason: 'Major version bump: 1.21.4 → 2.0.0',
     releaseUrl: 'https://github.com/go-gitea/gitea/releases/tag/v2.0.0',
     releaseNotes:
@@ -62,6 +65,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: '1.32.7',
     publishedAt: '2025-01-10T09:00:00Z',
     status: 'breaking-change',
+    checkIssue: null,
     breakingChangeReason: 'Release notes mention: "breaking change"',
     releaseUrl: 'https://github.com/dani-garcia/vaultwarden/releases/tag/1.32.7',
     releaseNotes:
@@ -79,6 +83,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: null,
     publishedAt: null,
     status: 'unknown',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: null,
     releaseNotes: null,
@@ -95,6 +100,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: null,
     publishedAt: null,
     status: 'no-repo',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: null,
     releaseNotes: null,
@@ -111,6 +117,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: 'v0.107.52',
     publishedAt: '2024-12-01T12:00:00Z',
     status: 'up-to-date',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/AdguardTeam/AdGuardHome/releases/tag/v0.107.52',
     releaseNotes:
@@ -128,6 +135,7 @@ export const mockContainers: ContainerInfo[] = [
     latestVersion: '30.0.4',
     publishedAt: '2025-01-20T11:00:00Z',
     status: 'update-available',
+    checkIssue: null,
     breakingChangeReason: null,
     releaseUrl: 'https://github.com/nextcloud/nextcloud/releases/tag/v30.0.4',
     releaseNotes:

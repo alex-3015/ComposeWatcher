@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { ChevronDown, FolderOpen } from 'lucide-vue-next';
+import { computed } from 'vue';
+import { ChevronDown, FolderOpen } from '@lucide/vue';
 import type { ContainerInfo } from '../types';
 import ContainerCard from './ContainerCard.vue';
 import { UI } from '../theme';
 
-defineProps<{
+const props = defineProps<{
   composeFile: string;
   containers: ContainerInfo[];
   counts: { breaking: number; updates: number; total: number };
   expanded: boolean;
 }>();
+
+const groupId = computed(
+  () => `compose-group-${props.composeFile.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+);
 
 const emit = defineEmits<{
   toggle: [];
@@ -20,14 +25,17 @@ const emit = defineEmits<{
 <template>
   <div>
     <button
+      :aria-expanded="expanded"
+      :aria-controls="groupId"
       :class="`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${UI.cardBg} border ${UI.borderDefault} hover:border-gray-700 transition-colors mb-3`"
       @click="emit('toggle')"
     >
       <ChevronDown
         :size="16"
         :class="`${UI.textSecondary} transition-transform shrink-0 ${expanded ? '' : '-rotate-90'}`"
+        aria-hidden="true"
       />
-      <FolderOpen :size="16" :class="`${UI.textSecondary} shrink-0`" />
+      <FolderOpen :size="16" :class="`${UI.textSecondary} shrink-0`" aria-hidden="true" />
       <span :class="`font-mono text-sm ${UI.textPrimary} truncate`">{{ composeFile }}</span>
       <div class="flex items-center gap-2 ml-auto shrink-0">
         <span
@@ -49,6 +57,7 @@ const emit = defineEmits<{
     </button>
     <div
       v-show="expanded"
+      :id="groupId"
       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6"
     >
       <ContainerCard

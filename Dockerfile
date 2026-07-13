@@ -11,7 +11,7 @@ FROM node:24-alpine AS backend-build
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json* ./
 RUN npm ci
-COPY backend/tsconfig.json ./
+COPY backend/tsconfig.json backend/tsconfig.build.json ./
 COPY backend/src ./src
 RUN npm run build
 
@@ -67,7 +67,7 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log && \
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8080/api/containers || exit 1
+  CMD wget -qO- http://localhost:8080/api/health || exit 1
 
 USER appuser
 

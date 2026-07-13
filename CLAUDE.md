@@ -46,8 +46,8 @@ The app is a **single docker-compose service** that bundles both a Node.js backe
 1. On startup (or cache miss), `scanDockerDir` recursively finds all `docker-compose.{yml,yaml}` / `compose.{yml,yaml}` files under `DOCKER_DIR`.
 2. For each service with an `image:` field, it parses the image name and infers a GitHub `owner/repo` via `inferGithubRepo` (known-mapping table + heuristics).
 3. Manual overrides from `DATA_DIR/config.json` (`repoMappings`) replace auto-inferred repos.
-4. `enrichWithGithubData` calls `GET /repos/{owner}/{repo}/releases/latest` for each container and fills in `latestVersion`, `status`, and `breakingChangeReason`.
-5. Results are cached in memory for 5 minutes; `?refresh=true` bypasses the cache.
+4. `enrichWithGithubData` deduplicates repositories and calls `GET /repos/{owner}/{repo}/releases/latest` with bounded concurrency, then fills in release data, status, and structured check diagnostics.
+5. Results use a versioned memory/disk stale-while-revalidate cache; `?refresh=true` waits for a fresh result.
 
 ### Container ID format
 `"<relative-compose-path>::<service-name>"` — e.g. `"sonarr/docker-compose.yml::sonarr"`. IDs are URL-encoded when used in the `POST /api/containers/:id/repo` route.
@@ -55,10 +55,14 @@ The app is a **single docker-compose service** that bundles both a Node.js backe
 ### Status values
 `up-to-date` | `update-available` | `breaking-change` | `unknown` | `no-repo`
 
+Ambiguous tags (`latest`, digests, Compose variables, or unequal non-semver values) remain `unknown` and include `checkIssue.code = "unverifiable-version"`.
+
 Breaking change is flagged when: (a) major semver bump, or (b) release notes contain keywords from `BREAKING_KEYWORDS` array in `githubService.ts`.
 
 ### Types
 `backend/src/types.ts` is the source of truth for `ContainerInfo`, `Config`, and `GithubRelease`. The frontend has a mirror at `frontend/src/types.ts` — keep them in sync manually.
+
+API success responses use `{ data }`; `GET /api/containers` additionally returns `{ meta: { stale, refreshing, refreshedAt, refreshError } }`. Errors use `{ error: { code, message } }`.
 
 ### Test environments
 - Backend tests: `vitest` with `environment: 'node'` (config in `backend/vitest.config.ts`)
