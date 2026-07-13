@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { X, GitBranch } from '@lucide/vue';
-import type { ContainerInfo } from '../types';
+import type { ContainerSummary } from '../types';
 import { UI } from '../theme';
 
 const props = defineProps<{
-  container: ContainerInfo;
+  container: ContainerSummary;
   saveError?: string | null;
 }>();
 

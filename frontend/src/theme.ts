@@ -1,6 +1,6 @@
-import type { ContainerInfo } from './types';
+import type { ContainerStatus } from './types';
 
-export type StatusKey = ContainerInfo['status'];
+export type StatusKey = ContainerStatus;
 
 export const UI = {
   pageBg: 'bg-gray-950',

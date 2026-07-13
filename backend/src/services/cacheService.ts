@@ -1,30 +1,16 @@
-import fs from 'fs';
 import path from 'path';
 import type { ContainerInfo, GithubRateLimit } from '../types.js';
 import { consoleServiceLogger, type ServiceLogger } from './serviceLogger.js';
+import { readJson, writeJsonAtomic } from './atomicJsonStore.js';
 
 const DATA_DIR = process.env.DATA_DIR ?? '/data';
 const CACHE_FILE = path.join(DATA_DIR, 'cache.json');
 
-let dataDirEnsured = false;
-
-function ensureDataDir() {
-  if (dataDirEnsured) return;
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  dataDirEnsured = true;
-}
-
-/** Reset the ensureDataDir cache — useful for testing. */
-export function resetCacheDirFlag(): void {
-  dataDirEnsured = false;
-}
-
 export interface CachedData {
-  schemaVersion: 3;
+  schemaVersion: 4;
   containers: ContainerInfo[];
   ts: number;
+  refreshedAt: string | null;
   githubRateLimit: GithubRateLimit | null;
 }
 
@@ -32,11 +18,12 @@ function isValidCachedData(value: unknown): value is CachedData {
   if (typeof value !== 'object' || value === null) return false;
   const obj = value as Record<string, unknown>;
   return (
-    obj.schemaVersion === 3 &&
+    obj.schemaVersion === 4 &&
     Array.isArray(obj.containers) &&
     obj.containers.every(isValidContainer) &&
     typeof obj.ts === 'number' &&
     Number.isFinite(obj.ts) &&
+    isNullableString(obj.refreshedAt) &&
     isValidRateLimit(obj.githubRateLimit)
   );
 }
@@ -135,13 +122,12 @@ function isValidContainer(value: unknown): value is ContainerInfo {
   );
 }
 
-export function loadCachedContainers(
+export async function loadCachedContainers(
   logger: ServiceLogger = consoleServiceLogger,
-): CachedData | null {
-  ensureDataDir();
-  if (!fs.existsSync(CACHE_FILE)) return null;
+): Promise<CachedData | null> {
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
+    const parsed = await readJson(CACHE_FILE);
+    if (parsed === null) return null;
     if (!isValidCachedData(parsed)) {
       logger.warn({}, 'Cache file has invalid structure, ignoring');
       return null;
@@ -153,22 +139,17 @@ export function loadCachedContainers(
   }
 }
 
-export function saveCachedContainers(
+export async function saveCachedContainers(
   containers: ContainerInfo[],
   githubRateLimit: GithubRateLimit | null,
-): void {
-  ensureDataDir();
-  const data: CachedData = { schemaVersion: 3, containers, ts: Date.now(), githubRateLimit };
-  const tmpFile = `${CACHE_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
-  try {
-    fs.renameSync(tmpFile, CACHE_FILE);
-  } catch (renameErr) {
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch {
-      // ignore cleanup errors
-    }
-    throw renameErr;
-  }
+  refreshedAt: string | null,
+): Promise<void> {
+  const data: CachedData = {
+    schemaVersion: 4,
+    containers,
+    ts: Date.now(),
+    refreshedAt,
+    githubRateLimit,
+  };
+  await writeJsonAtomic(CACHE_FILE, data);
 }

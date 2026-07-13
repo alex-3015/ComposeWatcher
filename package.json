@@ -1,0 +1,27 @@
+{
+  "name": "composewatcher",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "contracts",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @composewatcher/contracts && npm run build --workspace @composewatcher/backend && npm run build --workspace @composewatcher/frontend && node scripts/check-bundle-budget.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "npm run format --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace @composewatcher/frontend",
+    "check": "npm run format && npm run lint && npm run typecheck && npm run test:coverage && npm run build"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.10.6"
+  }
+}

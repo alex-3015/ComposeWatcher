@@ -1,74 +1,46 @@
-# ─── Backend deps ───────────────────────────────────────────────────────────
+FROM node:24-alpine AS build
 
-FROM node:24-alpine AS backend-deps
 WORKDIR /app
-COPY backend/package.json backend/package-lock.json* ./
-RUN npm ci --omit=dev
-
-# ─── Backend build ──────────────────────────────────────────────────────────
-
-FROM node:24-alpine AS backend-build
-WORKDIR /app
-COPY backend/package.json backend/package-lock.json* ./
+COPY package.json package-lock.json ./
+COPY contracts/package.json contracts/package.json
+COPY backend/package.json backend/package.json
+COPY frontend/package.json frontend/package.json
 RUN npm ci
-COPY backend/tsconfig.json backend/tsconfig.build.json ./
-COPY backend/src ./src
+
+COPY contracts contracts
+COPY backend backend
+COPY frontend frontend
 RUN npm run build
-
-# ─── Frontend build ─────────────────────────────────────────────────────────
-
-FROM node:24-alpine AS frontend-build
-WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci
-COPY frontend/ .
-RUN npm run build
-
-# ─── Combined runtime ───────────────────────────────────────────────────────
 
 FROM node:24-alpine AS app
-RUN apk upgrade --no-cache && apk add --no-cache nginx tini
 
-ENV NODE_ENV=production
+RUN apk upgrade --no-cache && apk add --no-cache tini
 
-# Backend
-COPY --from=backend-deps  /app/node_modules  /app/node_modules
-COPY --from=backend-build /app/dist          /app/dist
-COPY backend/package.json                    /app/package.json
+ENV NODE_ENV=production \
+    PORT=8080 \
+    DOCKER_DIR=/docker \
+    DATA_DIR=/data
 
-# Frontend
-COPY --from=frontend-build /app/dist         /usr/share/nginx/html
-COPY frontend/nginx.conf                     /etc/nginx/http.d/default.conf
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY contracts/package.json contracts/package.json
+COPY backend/package.json backend/package.json
+COPY frontend/package.json frontend/package.json
+RUN npm ci --omit=dev \
+    --workspace @composewatcher/contracts \
+    --workspace @composewatcher/backend
 
-# Entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY --from=build /app/contracts/dist contracts/dist
+COPY --from=build /app/backend/dist backend/dist
+COPY --from=build /app/frontend/dist frontend/dist
 
-# Non-root user setup
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-# Configure nginx for non-root: pid in /tmp
-RUN sed -i 's|/run/nginx/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
-
-# Ensure writable directories for non-root user
-RUN mkdir -p /data /var/tmp/nginx /var/cache/nginx /var/log/nginx /run/nginx /var/lib/nginx/tmp /var/lib/nginx/logs && \
-    chown -R appuser:appgroup /data && \
-    chown -R appuser:appgroup /var/cache/nginx && \
-    chown -R appuser:appgroup /run/nginx && \
-    chown -R appuser:appgroup /var/log/nginx && \
-    chown -R appuser:appgroup /var/tmp/nginx && \
-    chown -R appuser:appgroup /var/lib/nginx && \
-    chown -R appuser:appgroup /usr/share/nginx/html
-
-# Redirect nginx logs to stdout/stderr (after chown, since these are device symlinks)
-RUN ln -sf /dev/stdout /var/log/nginx/access.log && \
-    ln -sf /dev/stderr /var/log/nginx/error.log
+RUN mkdir -p /data/icons && chown -R node:node /data
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:8080/api/health || exit 1
 
-USER appuser
-
-ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
+USER node
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "backend/dist/index.js"]

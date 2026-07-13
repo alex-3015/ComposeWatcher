@@ -1,43 +1,27 @@
-export type ContainerStatus =
-  'up-to-date' | 'ahead' | 'update-available' | 'breaking-change' | 'unknown' | 'no-repo';
+import type {
+  BreakingChange,
+  CheckIssue,
+  ComparisonMode,
+  ContainerStatus,
+  UpdateKind,
+} from '@composewatcher/contracts';
 
-export type UpdateKind = 'major' | 'minor' | 'patch' | 'prerelease' | null;
-
-export type ComparisonMode = 'exact' | 'normalized' | 'unverifiable';
-
-export type CheckIssueCode =
-  | 'repo-not-found'
-  | 'rate-limited'
-  | 'timeout'
-  | 'network'
-  | 'github-error'
-  | 'invalid-release'
-  | 'unverifiable-version';
-
-export interface CheckIssue {
-  code: CheckIssueCode;
-  message: string;
-  retryAt: string | null;
-}
-
-export interface ApiError {
-  code: string;
-  message: string;
-}
-
-export interface BreakingChange {
-  version: string;
-  releaseName: string | null;
-  reason: string;
-  releaseUrl: string;
-}
-
-export interface GithubRateLimit {
-  limit: number;
-  remaining: number;
-  resetAt: string;
-  observedAt: string;
-}
+export type {
+  ApiError,
+  BreakingChange,
+  CheckIssue,
+  CheckIssueCode,
+  ComparisonMode,
+  ContainerDetail,
+  ContainerStatus,
+  ContainerSummary,
+  ContainersMeta,
+  ContainersResponse,
+  DataState,
+  GithubRateLimit,
+  RefreshMeta,
+  UpdateKind,
+} from '@composewatcher/contracts';
 
 export interface ContainerInfo {
   id: string;
@@ -61,7 +45,7 @@ export interface ContainerInfo {
   lastChecked: string | null;
 }
 
-export type RepoMapping = Record<string, string>; // containerId -> "owner/repo"
+export type RepoMapping = Record<string, string | null>; // containerId -> "owner/repo" or explicit unlink
 
 export interface Config {
   repoMappings: RepoMapping;
@@ -75,17 +59,4 @@ export interface GithubRelease {
   published_at: string;
   prerelease: boolean;
   draft: boolean;
-}
-
-export interface ContainersMeta {
-  stale: boolean;
-  refreshing: boolean;
-  refreshedAt: string | null;
-  refreshError: ApiError | null;
-  githubRateLimit: GithubRateLimit | null;
-}
-
-export interface ContainersResponse {
-  data: ContainerInfo[];
-  meta: ContainersMeta;
 }

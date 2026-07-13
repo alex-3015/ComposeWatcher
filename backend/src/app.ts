@@ -1,165 +1,27 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import type { ApiError, ContainerInfo, ContainersMeta, GithubRateLimit } from './types.js';
-import { scanDockerDir } from './services/dockerService.js';
-import { enrichWithGithubData } from './services/githubService.js';
-import { loadConfig, setRepoMapping } from './services/configService.js';
-import { loadCachedContainers, saveCachedContainers } from './services/cacheService.js';
-import { downloadIconsForContainers } from './services/iconService.js';
+import compress from '@fastify/compress';
+import helmet from '@fastify/helmet';
+import { registerWebApp } from './plugins/webApp.js';
+import { registerApiRoutes } from './routes/apiRoutes.js';
+import { ContainerCatalog, type ContainerCatalogApi } from './services/containerCatalog.js';
 
-const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
-const BACKGROUND_RETRY_MS = 30_000;
-const REPO_REGEX = '^[a-zA-Z0-9][a-zA-Z0-9._-]*\\/[a-zA-Z0-9][a-zA-Z0-9._-]*$';
-
-interface CacheState {
-  data: ContainerInfo[];
-  ts: number;
+export interface BuildAppOptions {
+  logger?: boolean;
+  catalog?: ContainerCatalogApi;
+  refreshOnStart?: boolean;
+  serveFrontend?: boolean;
+  webRoot?: string;
+  dataDirectory?: string;
 }
 
-interface GetContainersResult {
-  data: ContainerInfo[];
-  meta: ContainersMeta;
-}
-
-const apiErrorSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['code', 'message'],
-  properties: {
-    code: { type: 'string' },
-    message: { type: 'string' },
-  },
-} as const;
-
-const checkIssueSchema = {
-  anyOf: [
-    { type: 'null' },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['code', 'message', 'retryAt'],
-      properties: {
-        code: {
-          type: 'string',
-          enum: [
-            'repo-not-found',
-            'rate-limited',
-            'timeout',
-            'network',
-            'github-error',
-            'invalid-release',
-            'unverifiable-version',
-          ],
-        },
-        message: { type: 'string' },
-        retryAt: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-      },
-    },
-  ],
-} as const;
-
-const nullableStringSchema = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
-
-const githubRateLimitSchema = {
-  anyOf: [
-    { type: 'null' },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['limit', 'remaining', 'resetAt', 'observedAt'],
-      properties: {
-        limit: { type: 'number' },
-        remaining: { type: 'number' },
-        resetAt: { type: 'string' },
-        observedAt: { type: 'string' },
-      },
-    },
-  ],
-} as const;
-
-const containerSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'id',
-    'name',
-    'image',
-    'currentVersion',
-    'composeFile',
-    'githubRepo',
-    'latestUpstreamVersion',
-    'publishedAt',
-    'status',
-    'updateKind',
-    'comparisonMode',
-    'historyComplete',
-    'releaseDataStale',
-    'checkIssue',
-    'breakingChanges',
-    'releaseUrl',
-    'releaseNotes',
-    'releaseName',
-    'lastChecked',
-  ],
-  properties: {
-    id: { type: 'string' },
-    name: { type: 'string' },
-    image: { type: 'string' },
-    currentVersion: { type: 'string' },
-    composeFile: { type: 'string' },
-    githubRepo: nullableStringSchema,
-    latestUpstreamVersion: nullableStringSchema,
-    publishedAt: nullableStringSchema,
-    status: {
-      type: 'string',
-      enum: ['up-to-date', 'ahead', 'update-available', 'breaking-change', 'unknown', 'no-repo'],
-    },
-    updateKind: {
-      anyOf: [
-        { type: 'null' },
-        { type: 'string', enum: ['major', 'minor', 'patch', 'prerelease'] },
-      ],
-    },
-    comparisonMode: { type: 'string', enum: ['exact', 'normalized', 'unverifiable'] },
-    historyComplete: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
-    releaseDataStale: { type: 'boolean' },
-    checkIssue: checkIssueSchema,
-    breakingChanges: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['version', 'releaseName', 'reason', 'releaseUrl'],
-        properties: {
-          version: { type: 'string' },
-          releaseName: nullableStringSchema,
-          reason: { type: 'string' },
-          releaseUrl: { type: 'string' },
-        },
-      },
-    },
-    releaseUrl: nullableStringSchema,
-    releaseNotes: nullableStringSchema,
-    releaseName: nullableStringSchema,
-    lastChecked: nullableStringSchema,
-  },
-} as const;
-
-function parsePositiveInteger(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function publicError(code: string, message: string): { error: ApiError } {
-  return { error: { code, message } };
-}
-
-/** Builds the Fastify application without binding a network port. */
-export async function buildApp(opts?: { logger?: boolean }) {
+/** Builds and initializes the Fastify application without binding a port. */
+export async function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
-    logger: opts?.logger ?? true,
+    logger: options.logger ?? true,
     ajv: { customOptions: { removeAdditional: false } },
   });
+
   const corsOrigin = process.env.CORS_ORIGIN?.trim();
   if (corsOrigin) {
     await app.register(cors, {
@@ -167,202 +29,30 @@ export async function buildApp(opts?: { logger?: boolean }) {
     });
   }
 
-  let cache: CacheState | null = null;
-  let pendingRefresh: Promise<ContainerInfo[]> | null = null;
-  let lastRefreshError: ApiError | null = null;
-  let lastRefreshAttemptAt = 0;
-  let skipDiskCache = false;
-  let lastGithubRateLimit: GithubRateLimit | null = null;
-  const cacheTtlMs = parsePositiveInteger(process.env.CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
-
-  async function refreshContainers(): Promise<ContainerInfo[]> {
-    const config = loadConfig(app.log);
-    const scanned = (await scanDockerDir(app.log)).map((container) => ({
-      ...container,
-      githubRepo: config.repoMappings[container.id] ?? container.githubRepo,
-    }));
-    const enrichment = await enrichWithGithubData(scanned, app.log);
-    const enriched = enrichment.containers;
-    lastGithubRateLimit = enrichment.githubRateLimit;
-    const refreshedAt = Date.now();
-    cache = { data: enriched, ts: refreshedAt };
-    lastRefreshError = null;
-    skipDiskCache = false;
-    saveCachedContainers(enriched, lastGithubRateLimit);
-    void downloadIconsForContainers(enriched).catch((error: unknown) => {
-      app.log.warn({ error }, 'Icon download failed');
-    });
-    return enriched;
-  }
-
-  function startRefresh(): Promise<ContainerInfo[]> {
-    if (pendingRefresh) return pendingRefresh;
-    lastRefreshAttemptAt = Date.now();
-    const refresh = refreshContainers().catch((error: unknown) => {
-      lastRefreshError = { code: 'REFRESH_FAILED', message: 'Container refresh failed.' };
-      throw error;
-    });
-    pendingRefresh = refresh;
-    void refresh
-      .finally(() => {
-        if (pendingRefresh === refresh) pendingRefresh = null;
-      })
-      .catch(() => undefined);
-    return refresh;
-  }
-
-  function resultFromCache(stale: boolean): GetContainersResult {
-    if (!cache) throw new Error('Cache is not available');
-    return {
-      data: cache.data,
-      meta: {
-        stale,
-        refreshing: pendingRefresh !== null,
-        refreshedAt: new Date(cache.ts).toISOString(),
-        refreshError: lastRefreshError,
-        githubRateLimit: lastGithubRateLimit,
+  await app.register(compress, {
+    global: true,
+    globalDecompression: false,
+  });
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"],
       },
-    };
-  }
-
-  async function getContainers(forceRefresh = false): Promise<GetContainersResult> {
-    if (forceRefresh) {
-      await startRefresh();
-      return resultFromCache(false);
-    }
-
-    if (!cache && !skipDiskCache) {
-      const diskData = loadCachedContainers(app.log);
-      if (diskData) {
-        cache = { data: diskData.containers, ts: diskData.ts };
-        lastGithubRateLimit = diskData.githubRateLimit;
-      }
-    }
-
-    if (cache) {
-      const stale = Date.now() - cache.ts >= cacheTtlMs;
-      const retryDue =
-        lastRefreshError === null || Date.now() - lastRefreshAttemptAt >= BACKGROUND_RETRY_MS;
-      if (stale && !pendingRefresh && retryDue) {
-        void startRefresh().catch((error: unknown) => {
-          app.log.warn({ error }, 'Background refresh failed');
-        });
-      }
-      return resultFromCache(stale);
-    }
-
-    await startRefresh();
-    return resultFromCache(false);
-  }
-
-  app.setErrorHandler((error, request, reply) => {
-    if (typeof error === 'object' && error !== null && 'validation' in error && error.validation) {
-      return reply.status(400).send(publicError('VALIDATION_ERROR', 'Invalid request.'));
-    }
-    request.log.error(error);
-    return reply.status(500).send(publicError('INTERNAL_ERROR', 'Internal server error.'));
+    },
+    crossOriginEmbedderPolicy: false,
   });
 
-  app.get(
-    '/api/health',
-    {
-      schema: {
-        response: {
-          200: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['data'],
-            properties: {
-              data: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['status'],
-                properties: { status: { type: 'string', const: 'ok' } },
-              },
-            },
-          },
-        },
-      },
-    },
-    async () => ({ data: { status: 'ok' as const } }),
-  );
-
-  app.get<{ Querystring: { refresh?: string } }>(
-    '/api/containers',
-    {
-      schema: {
-        querystring: {
-          type: 'object',
-          additionalProperties: false,
-          properties: { refresh: { type: 'string', enum: ['true', 'false'] } },
-        },
-        response: {
-          200: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['data', 'meta'],
-            properties: {
-              data: { type: 'array', items: containerSchema },
-              meta: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['stale', 'refreshing', 'refreshedAt', 'refreshError', 'githubRateLimit'],
-                properties: {
-                  stale: { type: 'boolean' },
-                  refreshing: { type: 'boolean' },
-                  refreshedAt: nullableStringSchema,
-                  refreshError: { anyOf: [{ type: 'null' }, apiErrorSchema] },
-                  githubRateLimit: githubRateLimitSchema,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    async (request) => getContainers(request.query.refresh === 'true'),
-  );
-
-  app.post<{ Params: { id: string }; Body: { repo: string | null } }>(
-    '/api/containers/:id/repo',
-    {
-      schema: {
-        params: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['id'],
-          properties: { id: { type: 'string', minLength: 4, maxLength: 1024, pattern: '::' } },
-        },
-        body: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['repo'],
-          properties: {
-            repo: {
-              anyOf: [
-                { type: 'null' },
-                { type: 'string', minLength: 3, maxLength: 200, pattern: REPO_REGEX },
-              ],
-            },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      const { id } = request.params;
-      const knownContainers = cache?.data ?? (await scanDockerDir(app.log));
-      if (!knownContainers.some((container) => container.id === id)) {
-        return reply.status(404).send(publicError('CONTAINER_NOT_FOUND', 'Container not found.'));
-      }
-
-      setRepoMapping(id, request.body.repo, app.log);
-      cache = null;
-      skipDiskCache = true;
-      return reply.send({ data: { id, githubRepo: request.body.repo } });
-    },
-  );
-
-  app.get('/api/config', async () => ({ data: loadConfig(app.log) }));
-
+  const catalog = options.catalog ?? new ContainerCatalog(app.log);
+  await catalog.initialize(options.refreshOnStart ?? true);
+  await registerApiRoutes(app, catalog);
+  if (options.serveFrontend ?? process.env.NODE_ENV === 'production') {
+    await registerWebApp(app, options.webRoot, options.dataDirectory);
+  }
+  app.addHook('onClose', async () => catalog.close());
   return app;
 }

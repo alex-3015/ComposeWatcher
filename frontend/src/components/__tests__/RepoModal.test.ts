@@ -1,32 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import RepoModal from '../RepoModal.vue';
-import type { ContainerInfo } from '../../types';
+import { summary } from '../../__tests__/factories';
 
-function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
-  return {
-    id: 'docker-compose.yml::sonarr',
-    name: 'sonarr',
-    image: 'ghcr.io/linuxserver/sonarr',
-    currentVersion: '4.0.0',
-    composeFile: 'docker-compose.yml',
+const makeContainer = (overrides = {}) =>
+  summary({
     githubRepo: null,
     latestUpstreamVersion: null,
     publishedAt: null,
     status: 'no-repo',
+    dataState: 'unlinked',
     updateKind: null,
     comparisonMode: 'unverifiable',
-    historyComplete: null,
-    releaseDataStale: false,
-    checkIssue: null,
-    breakingChanges: [],
+    iconUrl: null,
     releaseUrl: null,
-    releaseNotes: null,
-    releaseName: null,
     lastChecked: null,
     ...overrides,
-  };
-}
+  });
 
 // Template button order:
 //   [0] Header X-close button     (no visible text, contains <X> icon stub)

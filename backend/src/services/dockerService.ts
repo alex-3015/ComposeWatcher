@@ -103,8 +103,6 @@ const COMPOSE_FILENAMES = new Set([
 
 async function findComposeFiles(dir: string, logger: ServiceLogger): Promise<string[]> {
   const results: string[] = [];
-  if (!fs.existsSync(dir)) return results;
-
   const pending = [dir];
   while (pending.length > 0) {
     const currentDir = pending.pop();

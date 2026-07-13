@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs/promises';
 import path from 'path';
 import type { ContainerInfo } from '../types.js';
 
@@ -11,27 +11,15 @@ const MAX_RESPONSE_BYTES = 1_024 * 1_024; // 1 MB
 const BATCH_SIZE = 5;
 const MAX_NAME_LENGTH = 128;
 
-/** Maps container/service names to selfh.st icon references.
- *  Must stay in sync with frontend/src/iconMap.ts. */
+/** Maps service names to selfh.st icon references for server-owned icon URLs. */
 const ICON_NAME_MAP: Record<string, string> = {
   adguardhome: 'adguard-home',
   'portainer-ce': 'portainer',
   'portainer-ee': 'portainer',
 };
 
-let iconsDirEnsured = false;
-
-function ensureIconsDir(): void {
-  if (iconsDirEnsured) return;
-  if (!fs.existsSync(ICONS_DIR)) {
-    fs.mkdirSync(ICONS_DIR, { recursive: true });
-  }
-  iconsDirEnsured = true;
-}
-
-/** Reset the ensureIconsDir cache — useful for testing. */
-export function resetIconsDirFlag(): void {
-  iconsDirEnsured = false;
+async function ensureIconsDir(): Promise<void> {
+  await fs.mkdir(ICONS_DIR, { recursive: true });
 }
 
 /**
@@ -54,17 +42,22 @@ export function getIconFileName(serviceName: string): string | null {
 /**
  * Check whether an icon file already exists locally.
  */
-export function iconExistsLocally(serviceName: string): boolean {
+export async function iconExistsLocally(serviceName: string): Promise<boolean> {
   const fileName = getIconFileName(serviceName);
   if (!fileName) return false;
 
-  ensureIconsDir();
+  await ensureIconsDir();
   const fullPath = path.resolve(ICONS_DIR, fileName);
 
   // Path traversal guard
   if (!fullPath.startsWith(path.resolve(ICONS_DIR))) return false;
 
-  return fs.existsSync(fullPath);
+  try {
+    await fs.access(fullPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -75,7 +68,7 @@ export async function downloadIcon(serviceName: string): Promise<boolean> {
   const fileName = getIconFileName(serviceName);
   if (!fileName) return false;
 
-  ensureIconsDir();
+  await ensureIconsDir();
   const finalPath = path.resolve(ICONS_DIR, fileName);
 
   // Path traversal guard
@@ -106,8 +99,8 @@ export async function downloadIcon(serviceName: string): Promise<boolean> {
     if (buf.byteLength > MAX_RESPONSE_BYTES) return false;
 
     tmpFile = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tmpFile, buf);
-    fs.renameSync(tmpFile, finalPath);
+    await fs.writeFile(tmpFile, buf);
+    await fs.rename(tmpFile, finalPath);
     return true;
   } catch {
     return false;
@@ -115,7 +108,7 @@ export async function downloadIcon(serviceName: string): Promise<boolean> {
     clearTimeout(timeout);
     if (tmpFile) {
       try {
-        fs.unlinkSync(tmpFile);
+        await fs.rm(tmpFile, { force: true });
       } catch {
         // file was already renamed or never created
       }
@@ -136,7 +129,7 @@ export async function downloadIconsForContainers(containers: ContainerInfo[]): P
     const fileName = getIconFileName(c.name);
     if (!fileName || seen.has(fileName)) continue;
     seen.add(fileName);
-    if (!iconExistsLocally(c.name)) {
+    if (!(await iconExistsLocally(c.name))) {
       toDownload.push(c.name);
     }
   }

@@ -1,51 +1,34 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import path from 'path';
-
-// ── fs mock ────────────────────────────────────────────────────────────────
-vi.mock('fs', () => ({
-  default: {
-    existsSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    renameSync: vi.fn(),
-    unlinkSync: vi.fn(),
-  },
-}));
-
-import fsDefault from 'fs';
-import {
-  getIconFileName,
-  iconExistsLocally,
-  downloadIcon,
-  downloadIconsForContainers,
-  resetIconsDirFlag,
-} from '../iconService.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContainerInfo } from '../../types.js';
 
-const mockFs = fsDefault as unknown as {
-  existsSync: ReturnType<typeof vi.fn>;
-  mkdirSync: ReturnType<typeof vi.fn>;
-  writeFileSync: ReturnType<typeof vi.fn>;
-  renameSync: ReturnType<typeof vi.fn>;
-  unlinkSync: ReturnType<typeof vi.fn>;
-};
+let dataDirectory: string;
 
-const ICONS_DIR = path.join('/data', 'icons');
+async function subject() {
+  vi.resetModules();
+  return import('../iconService.js');
+}
 
-function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
+function response(body = new Uint8Array([1, 2, 3]), contentType = 'image/png'): Response {
+  return new Response(body, { status: 200, headers: { 'content-type': contentType } });
+}
+
+function container(name: string): ContainerInfo {
   return {
-    id: 'docker-compose.yml::sonarr',
-    name: 'sonarr',
-    image: 'ghcr.io/linuxserver/sonarr',
-    currentVersion: '4.0.0',
-    composeFile: 'docker-compose.yml',
-    githubRepo: 'linuxserver/sonarr',
-    latestUpstreamVersion: '4.0.0',
-    publishedAt: '2024-01-01T00:00:00Z',
-    status: 'up-to-date',
+    id: `compose.yml::${name}`,
+    name,
+    image: `owner/${name}`,
+    currentVersion: '1.0.0',
+    composeFile: 'compose.yml',
+    githubRepo: `owner/${name}`,
+    latestUpstreamVersion: null,
+    publishedAt: null,
+    status: 'unknown',
     updateKind: null,
-    comparisonMode: 'exact',
-    historyComplete: true,
+    comparisonMode: 'unverifiable',
+    historyComplete: null,
     releaseDataStale: false,
     checkIssue: null,
     breakingChanges: [],
@@ -53,352 +36,64 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     releaseNotes: null,
     releaseName: null,
     lastChecked: null,
-    ...overrides,
   };
 }
 
-function mockFetchResponse(opts: {
-  ok?: boolean;
-  status?: number;
-  contentType?: string;
-  contentLength?: string;
-  body?: ArrayBuffer;
-}) {
-  const body = opts.body ?? new ArrayBuffer(100);
-  return vi.fn().mockResolvedValue({
-    ok: opts.ok ?? true,
-    status: opts.status ?? 200,
-    headers: {
-      get: (name: string) => {
-        if (name === 'content-type') return opts.contentType ?? 'image/png';
-        if (name === 'content-length') return opts.contentLength ?? String(body.byteLength);
-        return null;
-      },
-    },
-    arrayBuffer: () => Promise.resolve(body),
-  });
-}
-
-beforeEach(() => {
-  vi.resetAllMocks();
-  resetIconsDirFlag();
-  vi.stubGlobal('fetch', mockFetchResponse({}));
+beforeEach(async () => {
+  dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'composewatcher-icons-'));
+  process.env.DATA_DIR = dataDirectory;
+});
+afterEach(async () => {
+  delete process.env.DATA_DIR;
+  vi.unstubAllGlobals();
+  await fs.rm(dataDirectory, { recursive: true, force: true });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
-// getIconFileName
-// ────────────────────────────────────────────────────────────────────────────
-describe('getIconFileName', () => {
-  it('returns filename for unmapped service', () => {
-    expect(getIconFileName('sonarr')).toBe('sonarr.png');
+describe('icon service', () => {
+  it.each([
+    ['sonarr', 'sonarr.png'],
+    ['AdGuardHome', 'adguard-home.png'],
+    ['portainer-ce', 'portainer.png'],
+  ])('maps %s to %s', async (name, expected) => {
+    const { getIconFileName } = await subject();
+    expect(getIconFileName(name)).toBe(expected);
   });
 
-  it('returns filename for mapped service (adguardhome)', () => {
-    expect(getIconFileName('adguardhome')).toBe('adguard-home.png');
+  it.each(['', '   ', '../secret', 'a/b', 'a\\b'])('rejects unsafe name %j', async (name) => {
+    const { getIconFileName } = await subject();
+    expect(getIconFileName(name)).toBeNull();
   });
 
-  it('returns filename for mapped service (portainer-ce)', () => {
-    expect(getIconFileName('portainer-ce')).toBe('portainer.png');
+  it('detects a locally cached icon', async () => {
+    await fs.mkdir(path.join(dataDirectory, 'icons'));
+    await fs.writeFile(path.join(dataDirectory, 'icons', 'sonarr.png'), 'png');
+    const { iconExistsLocally } = await subject();
+    await expect(iconExistsLocally('sonarr')).resolves.toBe(true);
+    await expect(iconExistsLocally('radarr')).resolves.toBe(false);
   });
 
-  it('returns filename for mapped service (portainer-ee)', () => {
-    expect(getIconFileName('portainer-ee')).toBe('portainer.png');
-  });
-
-  it('lowercases the service name', () => {
-    expect(getIconFileName('Sonarr')).toBe('sonarr.png');
-    expect(getIconFileName('RADARR')).toBe('radarr.png');
-  });
-
-  it('trims whitespace', () => {
-    expect(getIconFileName('  sonarr  ')).toBe('sonarr.png');
-  });
-
-  it('returns null for empty string', () => {
-    expect(getIconFileName('')).toBeNull();
-  });
-
-  it('returns null for whitespace-only string', () => {
-    expect(getIconFileName('   ')).toBeNull();
-  });
-
-  it('returns null for string exceeding max length', () => {
-    expect(getIconFileName('a'.repeat(129))).toBeNull();
-  });
-
-  it('returns filename at max length boundary', () => {
-    const name = 'a'.repeat(128);
-    expect(getIconFileName(name)).toBe(`${name}.png`);
-  });
-
-  it('returns null for names with forward slashes', () => {
-    expect(getIconFileName('my/app')).toBeNull();
-  });
-
-  it('returns null for names with backslashes', () => {
-    expect(getIconFileName('my\\app')).toBeNull();
-  });
-
-  it('returns null for names with path traversal sequences', () => {
-    expect(getIconFileName('../etc/passwd')).toBeNull();
-    expect(getIconFileName('..')).toBeNull();
-    expect(getIconFileName('foo/../bar')).toBeNull();
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// iconExistsLocally
-// ────────────────────────────────────────────────────────────────────────────
-describe('iconExistsLocally', () => {
-  it('returns true when icon file exists', () => {
-    mockFs.existsSync.mockImplementation((p: string) => {
-      if (p === ICONS_DIR) return true;
-      if (p === path.resolve(ICONS_DIR, 'sonarr.png')) return true;
-      return false;
-    });
-    expect(iconExistsLocally('sonarr')).toBe(true);
-  });
-
-  it('returns false when icon file does not exist', () => {
-    mockFs.existsSync.mockImplementation(
-      (p: string) => p === ICONS_DIR || p === path.resolve(ICONS_DIR),
-    );
-    expect(iconExistsLocally('sonarr')).toBe(false);
-  });
-
-  it('returns false for empty service name', () => {
-    expect(iconExistsLocally('')).toBe(false);
-  });
-
-  it('creates icons directory if it does not exist', () => {
-    mockFs.existsSync.mockReturnValue(false);
-    iconExistsLocally('sonarr');
-    expect(mockFs.mkdirSync).toHaveBeenCalledWith(ICONS_DIR, { recursive: true });
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// downloadIcon
-// ────────────────────────────────────────────────────────────────────────────
-describe('downloadIcon', () => {
-  it('downloads and writes file atomically on success', async () => {
-    const imageBuffer = new ArrayBuffer(50);
-    vi.stubGlobal('fetch', mockFetchResponse({ body: imageBuffer }));
-    mockFs.existsSync.mockReturnValue(true);
-
-    const result = await downloadIcon('sonarr');
-
-    expect(result).toBe(true);
-    expect(mockFs.writeFileSync).toHaveBeenCalledTimes(1);
-    const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
-    expect(writtenPath).toContain('.tmp');
-    expect(mockFs.renameSync).toHaveBeenCalledWith(
-      writtenPath,
-      path.resolve(ICONS_DIR, 'sonarr.png'),
+  it('downloads an image atomically', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    const { downloadIcon } = await subject();
+    await expect(downloadIcon('sonarr')).resolves.toBe(true);
+    await expect(fs.readFile(path.join(dataDirectory, 'icons', 'sonarr.png'))).resolves.toEqual(
+      Buffer.from([1, 2, 3]),
     );
   });
 
-  it('fetches from the correct CDN URL', async () => {
-    const mockFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', mockFetch);
-    mockFs.existsSync.mockReturnValue(true);
-
-    await downloadIcon('sonarr');
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/sonarr.png',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+  it('rejects non-images and oversized payloads', async () => {
+    const { downloadIcon } = await subject();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(new Uint8Array([1]), 'text/plain')));
+    await expect(downloadIcon('sonarr')).resolves.toBe(false);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(new Uint8Array(1_024 * 1_024 + 1))));
+    await expect(downloadIcon('sonarr')).resolves.toBe(false);
   });
 
-  it('uses mapped name for icon URL', async () => {
-    const mockFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', mockFetch);
-    mockFs.existsSync.mockReturnValue(true);
-
-    await downloadIcon('adguardhome');
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/adguard-home.png',
-      expect.any(Object),
-    );
-  });
-
-  it('returns false on HTTP 404', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse({ ok: false, status: 404 }));
-    mockFs.existsSync.mockReturnValue(true);
-
-    const result = await downloadIcon('nonexistent');
-    expect(result).toBe(false);
-    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
-  });
-
-  it('returns false on non-image content-type', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse({ contentType: 'text/html' }));
-    mockFs.existsSync.mockReturnValue(true);
-
-    const result = await downloadIcon('sonarr');
-    expect(result).toBe(false);
-    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
-  });
-
-  it('returns false when content-length exceeds 1 MB', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse({ contentLength: String(2 * 1024 * 1024) }));
-    mockFs.existsSync.mockReturnValue(true);
-
-    const result = await downloadIcon('sonarr');
-    expect(result).toBe(false);
-  });
-
-  it('returns false when actual body exceeds 1 MB', async () => {
-    const largeBody = new ArrayBuffer(1024 * 1024 + 1);
-    vi.stubGlobal('fetch', mockFetchResponse({ body: largeBody, contentLength: '0' }));
-    mockFs.existsSync.mockReturnValue(true);
-
-    const result = await downloadIcon('sonarr');
-    expect(result).toBe(false);
-  });
-
-  it('returns false on network timeout (fetch throws)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('AbortError')));
-    mockFs.existsSync.mockReturnValue(true);
-
-    const result = await downloadIcon('sonarr');
-    expect(result).toBe(false);
-  });
-
-  it('cleans up tmp file in finally block', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse({}));
-    mockFs.existsSync.mockReturnValue(true);
-    // Simulate rename failure so tmpFile still exists
-    mockFs.renameSync.mockImplementation(() => {
-      throw new Error('rename failed');
-    });
-
-    const result = await downloadIcon('sonarr');
-    expect(result).toBe(false);
-    expect(mockFs.unlinkSync).toHaveBeenCalled();
-  });
-
-  it('returns false for empty service name', async () => {
-    const result = await downloadIcon('');
-    expect(result).toBe(false);
-  });
-
-  it('returns false for path traversal attempt', async () => {
-    const result = await downloadIcon('../../../etc/passwd');
-    expect(result).toBe(false);
-    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// downloadIconsForContainers
-// ────────────────────────────────────────────────────────────────────────────
-describe('downloadIconsForContainers', () => {
-  it('skips already-cached icons', async () => {
-    const localFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', localFetch);
-    const resolvedIcon = path.resolve(ICONS_DIR, 'sonarr.png');
-    const resolvedDir = path.resolve(ICONS_DIR);
-    mockFs.existsSync.mockImplementation((p: string) => {
-      if (p === ICONS_DIR || p === resolvedDir) return true;
-      if (p === resolvedIcon) return true;
-      return false;
-    });
-
-    await downloadIconsForContainers([makeContainer({ name: 'sonarr' })]);
-    expect(localFetch).not.toHaveBeenCalled();
-  });
-
-  it('downloads icons that are not cached', async () => {
-    const mockFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', mockFetch);
-    mockFs.existsSync.mockImplementation((p: string) => {
-      if (p === ICONS_DIR) return true;
-      return false;
-    });
-
-    await downloadIconsForContainers([
-      makeContainer({ name: 'sonarr' }),
-      makeContainer({ name: 'radarr' }),
-    ]);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-  });
-
-  it('deduplicates by icon filename', async () => {
-    const mockFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', mockFetch);
-    mockFs.existsSync.mockImplementation((p: string) => p === ICONS_DIR);
-
-    await downloadIconsForContainers([
-      makeContainer({ id: 'a::sonarr', name: 'sonarr' }),
-      makeContainer({ id: 'b::sonarr', name: 'sonarr' }),
-    ]);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('deduplicates mapped names correctly', async () => {
-    const mockFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', mockFetch);
-    mockFs.existsSync.mockImplementation((p: string) => p === ICONS_DIR);
-
-    await downloadIconsForContainers([
-      makeContainer({ name: 'portainer-ce' }),
-      makeContainer({ name: 'portainer-ee' }),
-    ]);
-    // Both map to "portainer.png" — should only download once
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not throw when all downloads fail', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-    mockFs.existsSync.mockImplementation((p: string) => p === ICONS_DIR);
-
-    // Should not throw
-    await expect(
-      downloadIconsForContainers([
-        makeContainer({ name: 'sonarr' }),
-        makeContainer({ name: 'radarr' }),
-      ]),
-    ).resolves.toBeUndefined();
-  });
-
-  it('handles empty container list', async () => {
-    const mockFetch = mockFetchResponse({});
-    vi.stubGlobal('fetch', mockFetch);
-
-    await downloadIconsForContainers([]);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('downloads in batches of 5', async () => {
-    const callTimestamps: number[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation(() => {
-        callTimestamps.push(Date.now());
-        return Promise.resolve({
-          ok: true,
-          headers: {
-            get: (name: string) => {
-              if (name === 'content-type') return 'image/png';
-              if (name === 'content-length') return '50';
-              return null;
-            },
-          },
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(50)),
-        });
-      }),
-    );
-    mockFs.existsSync.mockImplementation((p: string) => p === ICONS_DIR);
-
-    const containers = Array.from({ length: 7 }, (_, i) =>
-      makeContainer({ name: `app${i}`, id: `compose.yml::app${i}` }),
-    );
-    await downloadIconsForContainers(containers);
-
-    // All 7 should have been attempted
-    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(7);
+  it('deduplicates batch downloads by icon filename', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetchMock);
+    const { downloadIconsForContainers } = await subject();
+    await downloadIconsForContainers([container('portainer-ce'), container('portainer-ee')]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

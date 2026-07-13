@@ -1,47 +1,45 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { ExternalLink, GitBranch, AlertTriangle, Package } from '@lucide/vue';
-import type { ContainerInfo } from '../types';
+import { computed, ref, watch } from 'vue';
+import { ExternalLink, GitBranch, AlertTriangle, Package, PanelRightOpen } from '@lucide/vue';
+import type { ContainerSummary } from '../types';
 import StatusBadge from './StatusBadge.vue';
-import ReleaseNotes from './ReleaseNotes.vue';
 import { STATUS_THEME, UI } from '../theme';
-import { getContainerIconUrl } from '../iconMap';
 import { formatExactDate, formatRelativeTime } from '../format';
 
-const props = defineProps<{
-  container: ContainerInfo;
-}>();
-
+const props = defineProps<{ container: ContainerSummary }>();
 const emit = defineEmits<{
-  linkRepo: [container: ContainerInfo];
+  linkRepo: [container: ContainerSummary];
+  openDetail: [container: ContainerSummary];
 }>();
 
 const iconFailed = ref(false);
-const iconUrl = computed(() => getContainerIconUrl(props.container.name));
+watch(
+  () => props.container.iconUrl,
+  () => (iconFailed.value = false),
+);
 
 const hasUpdate = computed(
   () =>
     props.container.status === 'update-available' || props.container.status === 'breaking-change',
 );
-
 const cardClass = computed(() => {
-  const s = STATUS_THEME[props.container.status];
-  if (props.container.status === 'breaking-change') return `${s.borderStrong} ${s.shadow}`;
+  const status = STATUS_THEME[props.container.status];
+  if (props.container.status === 'breaking-change')
+    return `${status.borderStrong} ${status.shadow}`;
   if (hasUpdate.value) return STATUS_THEME['update-available'].borderStrong;
   return `${UI.borderDefault} hover:border-gray-700`;
 });
 </script>
 
 <template>
-  <div
+  <article
     :class="`${UI.cardBg} border rounded-xl p-5 flex flex-col gap-4 transition-all ${cardClass}`"
   >
-    <!-- Header -->
     <div class="flex items-start justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0">
         <img
-          v-if="!iconFailed"
-          :src="iconUrl"
+          v-if="container.iconUrl && !iconFailed"
+          :src="container.iconUrl"
           alt=""
           class="w-5 h-5 shrink-0 rounded"
           @error="iconFailed = true"
@@ -55,7 +53,6 @@ const cardClass = computed(() => {
       <StatusBadge :status="container.status" />
     </div>
 
-    <!-- Version info -->
     <div class="grid grid-cols-2 gap-3">
       <div :class="`${UI.versionBoxBg} rounded-lg px-3 py-2 min-w-0`">
         <p :class="`${UI.textMuted} text-xs mb-0.5`">Image tag</p>
@@ -77,10 +74,16 @@ const cardClass = computed(() => {
 
     <div class="flex flex-wrap gap-1.5 -mt-2">
       <span
+        v-if="container.dataState !== 'fresh'"
+        :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-full px-2 py-0.5 text-[11px] ${UI.textSecondary}`"
+      >
+        {{ container.dataState }} data
+      </span>
+      <span
         v-if="container.comparisonMode === 'normalized'"
         :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-full px-2 py-0.5 text-[11px] ${UI.textSecondary}`"
       >
-        Normalized upstream comparison
+        Normalized comparison
       </span>
       <span
         v-if="container.updateKind"
@@ -90,88 +93,46 @@ const cardClass = computed(() => {
       </span>
     </div>
 
-    <!-- Breaking change warning -->
     <div
-      v-if="container.breakingChanges.length > 0"
-      :class="`${STATUS_THEME['breaking-change'].bg} border ${STATUS_THEME['breaking-change'].border} rounded-lg px-3 py-2.5`"
+      v-if="container.breakingChangeCount > 0"
+      class="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300"
     >
-      <div
-        v-for="change in container.breakingChanges"
-        :key="`${change.version}:${change.reason}`"
-        class="flex items-start gap-2 [&:not(:last-child)]:mb-2"
+      <AlertTriangle :size="14" aria-hidden="true" />
+      {{ container.breakingChangeCount }} breaking change{{
+        container.breakingChangeCount === 1 ? '' : 's'
+      }}
+      detected
+    </div>
+    <p v-if="container.checkIssue" class="text-xs text-amber-300" role="status">
+      {{ container.checkIssue.message }}
+    </p>
+
+    <div :class="`mt-auto flex flex-col gap-2 pt-3 border-t ${UI.borderDefault}`">
+      <button
+        type="button"
+        :class="`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm ${UI.primaryBg} ${UI.primaryBgHover}`"
+        @click="emit('openDetail', container)"
       >
-        <AlertTriangle
-          :size="14"
-          :class="`${STATUS_THEME['breaking-change'].text} shrink-0 mt-0.5`"
-          aria-hidden="true"
-        />
-        <p
-          :class="`${STATUS_THEME['breaking-change'].textLight} text-xs leading-relaxed break-words min-w-0`"
-        >
-          <a :href="change.releaseUrl" target="_blank" rel="noopener noreferrer" class="underline">
-            {{ change.version }}
-          </a>
-          — {{ change.reason }}
-        </p>
-      </div>
-    </div>
-
-    <div
-      v-if="container.historyComplete === false"
-      :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-lg px-3 py-2 text-xs ${UI.textSecondary}`"
-      role="status"
-    >
-      Breaking-change history may be incomplete because more than 100 releases are available.
-    </div>
-
-    <div
-      v-if="container.releaseDataStale"
-      class="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
-      role="status"
-    >
-      Showing cached upstream release data.
-    </div>
-
-    <div
-      v-if="container.checkIssue"
-      :class="`flex items-start gap-2 ${UI.inputBg} border ${UI.borderSubtle} rounded-lg px-3 py-2.5`"
-      role="status"
-    >
-      <AlertTriangle :size="14" :class="`${UI.textSecondary} shrink-0 mt-0.5`" aria-hidden="true" />
-      <p :class="`${UI.textSecondary} text-xs leading-relaxed break-words min-w-0`">
-        {{ container.checkIssue.message }}
-      </p>
-    </div>
-
-    <!-- Release Notes -->
-    <ReleaseNotes :release-notes="container.releaseNotes" :release-name="container.releaseName" />
-
-    <!-- Footer -->
-    <div :class="`flex flex-col gap-1.5 pt-1 border-t ${UI.borderDefault}`">
+        <PanelRightOpen :size="14" aria-hidden="true" /> View details
+      </button>
       <div class="flex items-center justify-between gap-2">
-        <p :class="`${UI.textFaint} text-xs font-mono truncate min-w-0`">
-          {{ container.composeFile }}
-        </p>
-        <div class="flex items-center gap-2 shrink-0">
-          <a
-            v-if="container.releaseUrl"
-            :href="container.releaseUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            :class="`flex items-center gap-1 text-xs ${UI.textSecondary} hover:text-white transition-colors`"
-          >
-            <ExternalLink :size="12" aria-hidden="true" />
-            Release
-          </a>
-          <button
-            :aria-label="`Edit GitHub repository for ${container.name}`"
-            :class="`flex items-center gap-1 text-xs ${UI.primaryText} ${UI.primaryTextHover} transition-colors max-w-[140px]`"
-            @click="emit('linkRepo', container)"
-          >
-            <GitBranch :size="12" class="shrink-0" aria-hidden="true" />
-            <span class="truncate">{{ container.githubRepo ?? 'Link repo' }}</span>
-          </button>
-        </div>
+        <a
+          v-if="container.releaseUrl"
+          :href="container.releaseUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          :class="`flex items-center gap-1 text-xs ${UI.textSecondary} hover:text-white`"
+        >
+          <ExternalLink :size="12" aria-hidden="true" /> Release
+        </a>
+        <button
+          :aria-label="`Edit GitHub repository for ${container.name}`"
+          :class="`flex items-center gap-1 text-xs ${UI.primaryText} ${UI.primaryTextHover} ml-auto max-w-[160px]`"
+          @click="emit('linkRepo', container)"
+        >
+          <GitBranch :size="12" class="shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ container.githubRepo ?? 'Link repo' }}</span>
+        </button>
       </div>
       <p
         v-if="container.lastChecked"
@@ -181,5 +142,5 @@ const cardClass = computed(() => {
         Last checked: {{ formatRelativeTime(container.lastChecked) }}
       </p>
     </div>
-  </div>
+  </article>
 </template>

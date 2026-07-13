@@ -1,20 +1,21 @@
 {
-  "name": "composewatcher-frontend",
-  "version": "2.1.0",
+  "name": "@composewatcher/frontend",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:mock": "cross-env MOCK=true vite",
     "build": "npm run typecheck && vite build",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.tools.json",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "format": "prettier --check \"src/**/*.{ts,vue}\"",
-    "format:fix": "prettier --write \"src/**/*.{ts,vue}\"",
+    "test:e2e": "playwright test",
+    "lint": "eslint src/ mock-plugin.ts vite.config.ts playwright.config.ts tests/",
+    "lint:fix": "eslint src/ mock-plugin.ts vite.config.ts playwright.config.ts tests/ --fix",
+    "format": "prettier --check \"src/**/*.{ts,vue}\" \"tests/**/*.ts\" \"*.ts\"",
+    "format:fix": "prettier --write \"src/**/*.{ts,vue}\" \"tests/**/*.ts\" \"*.ts\"",
     "docker:build": "docker build -t composewatcher:latest -f ../Dockerfile .. && node --input-type=commonjs -e \"require('fs').mkdirSync('../dist',{recursive:true})\" && docker save composewatcher:latest -o ../dist/composewatcher.tar && echo Image saved to dist/composewatcher.tar"
   },
   "dependencies": {
@@ -24,7 +25,10 @@
     "vue": "^3.5.39"
   },
   "devDependencies": {
+    "@composewatcher/contracts": "3.0.0",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.2",
+    "@types/node": "^24.0.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vitest/coverage-v8": "^4.1.10",
     "@vue/test-utils": "^2.4.11",

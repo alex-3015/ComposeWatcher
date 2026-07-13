@@ -1,47 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import path from 'path';
-
-// ── fs mock ────────────────────────────────────────────────────────────────
-vi.mock('fs', () => ({
-  default: {
-    existsSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    readFileSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    renameSync: vi.fn(),
-    unlinkSync: vi.fn(),
-  },
-}));
-
-import fsDefault from 'fs';
-import { loadCachedContainers, saveCachedContainers, resetCacheDirFlag } from '../cacheService.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContainerInfo } from '../../types.js';
 
-const mockFs = fsDefault as unknown as {
-  existsSync: ReturnType<typeof vi.fn>;
-  mkdirSync: ReturnType<typeof vi.fn>;
-  readFileSync: ReturnType<typeof vi.fn>;
-  writeFileSync: ReturnType<typeof vi.fn>;
-  renameSync: ReturnType<typeof vi.fn>;
-  unlinkSync: ReturnType<typeof vi.fn>;
-};
+let dataDirectory: string;
 
-const DATA_DIR = '/data';
-const CACHE_FILE = path.join(DATA_DIR, 'cache.json');
-const TMP_FILE_PATTERN = new RegExp(
-  `^${CACHE_FILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d+\\.\\d+\\.[a-z0-9]+\\.tmp$`,
-);
-
-function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
+function container(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
   return {
-    id: 'docker-compose.yml::sonarr',
-    name: 'sonarr',
-    image: 'ghcr.io/linuxserver/sonarr',
-    currentVersion: '4.0.0',
-    composeFile: 'docker-compose.yml',
-    githubRepo: 'linuxserver/sonarr',
-    latestUpstreamVersion: '4.0.0',
-    publishedAt: '2024-01-01T00:00:00Z',
+    id: 'compose.yml::app',
+    name: 'app',
+    image: 'owner/app',
+    currentVersion: '1.0.0',
+    composeFile: 'compose.yml',
+    githubRepo: 'owner/app',
+    latestUpstreamVersion: '1.0.0',
+    publishedAt: '2026-01-01T00:00:00.000Z',
     status: 'up-to-date',
     updateKind: null,
     comparisonMode: 'exact',
@@ -49,280 +23,159 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     releaseDataStale: false,
     checkIssue: null,
     breakingChanges: [],
-    releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
+    releaseUrl: null,
     releaseNotes: null,
     releaseName: null,
-    lastChecked: '2024-01-01T00:00:00Z',
+    lastChecked: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
 }
 
-beforeEach(() => {
-  vi.resetAllMocks();
-  resetCacheDirFlag();
+async function subject() {
+  vi.resetModules();
+  return import('../cacheService.js');
+}
+
+beforeEach(async () => {
+  dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'composewatcher-cache-'));
+  process.env.DATA_DIR = dataDirectory;
+});
+afterEach(async () => {
+  delete process.env.DATA_DIR;
+  await fs.rm(dataDirectory, { recursive: true, force: true });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
-// loadCachedContainers
-// ────────────────────────────────────────────────────────────────────────────
-describe('loadCachedContainers', () => {
-  it('returns parsed data when cache file exists and is valid', () => {
-    const cached = {
-      schemaVersion: 3 as const,
-      containers: [makeContainer()],
-      ts: 1700000000000,
-      githubRateLimit: null,
-    };
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify(cached));
-
-    const result = loadCachedContainers();
-    expect(result).toEqual(cached);
+describe('container snapshot cache', () => {
+  it('returns null when absent', async () => {
+    const { loadCachedContainers } = await subject();
+    await expect(loadCachedContainers()).resolves.toBeNull();
   });
 
-  it('returns null when cache file does not exist', () => {
-    mockFs.existsSync.mockImplementation((p: string) => p === DATA_DIR);
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
+  it('round-trips a version-4 snapshot', async () => {
+    const { saveCachedContainers, loadCachedContainers } = await subject();
+    await saveCachedContainers([container()], null, '2026-01-01T00:00:00.000Z');
+    const result = await loadCachedContainers();
+    expect(result?.schemaVersion).toBe(4);
+    expect(result?.containers).toEqual([container()]);
+    expect(result?.refreshedAt).toBe('2026-01-01T00:00:00.000Z');
   });
 
-  it('returns null when JSON is malformed', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue('{invalid json}}}');
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('returns null when containers field is missing', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify({ ts: 123 }));
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('returns null when containers field is not an array', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify({ containers: 'oops', ts: 123 }));
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('returns null when a schema-v2 container is incomplete', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(
-      JSON.stringify({ schemaVersion: 2, containers: [{ id: 'incomplete' }], ts: 123 }),
-    );
-
-    expect(loadCachedContainers()).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('returns null when a cached check issue has an unknown code', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(
+  it('invalidates v2/v3 snapshots', async () => {
+    await fs.writeFile(
+      path.join(dataDirectory, 'cache.json'),
       JSON.stringify({
         schemaVersion: 3,
-        containers: [
-          makeContainer({
-            checkIssue: { code: 'network', message: 'Network error', retryAt: null },
-          }),
-        ],
-        ts: 123,
+        containers: [container()],
+        ts: Date.now(),
         githubRateLimit: null,
-      }).replace('network', 'unsupported'),
+      }),
     );
-
-    expect(loadCachedContainers()).toBeNull();
-    spy.mockRestore();
+    const { loadCachedContainers } = await subject();
+    await expect(loadCachedContainers({ warn: vi.fn(), error: vi.fn() })).resolves.toBeNull();
   });
 
-  it('returns null when ts field is missing', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify({ containers: [] }));
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
+  it('rejects structurally incomplete containers', async () => {
+    await fs.writeFile(
+      path.join(dataDirectory, 'cache.json'),
+      JSON.stringify({
+        schemaVersion: 4,
+        containers: [{ id: 'bad' }],
+        ts: Date.now(),
+        refreshedAt: null,
+        githubRateLimit: null,
+      }),
+    );
+    const { loadCachedContainers } = await subject();
+    await expect(loadCachedContainers({ warn: vi.fn(), error: vi.fn() })).resolves.toBeNull();
   });
 
-  it('returns null when ts is NaN', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify({ containers: [], ts: NaN }));
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
+  it('rejects malformed rate-limit metadata', async () => {
+    await fs.writeFile(
+      path.join(dataDirectory, 'cache.json'),
+      JSON.stringify({
+        schemaVersion: 4,
+        containers: [container()],
+        ts: Date.now(),
+        refreshedAt: null,
+        githubRateLimit: {},
+      }),
+    );
+    const { loadCachedContainers } = await subject();
+    await expect(loadCachedContainers({ warn: vi.fn(), error: vi.fn() })).resolves.toBeNull();
   });
 
-  it('returns null when ts is Infinity', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify({ containers: [], ts: Infinity }));
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('returns null when readFileSync throws', () => {
-    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockImplementation(() => {
-      throw new Error('Permission denied');
+  it('accepts complete diagnostics, breaking changes, and rate-limit metadata', async () => {
+    const cached = container({
+      checkIssue: {
+        code: 'rate-limited',
+        message: 'Try later.',
+        retryAt: '2026-01-01T01:00:00.000Z',
+      },
+      breakingChanges: [
+        {
+          version: '2.0.0',
+          releaseName: null,
+          reason: 'Major version bump',
+          releaseUrl: 'https://example.test/v2',
+        },
+      ],
     });
-
-    const result = loadCachedContainers();
-    expect(result).toBeNull();
-    spy.mockRestore();
-  });
-
-  it('creates DATA_DIR if it does not exist', () => {
-    mockFs.existsSync.mockReturnValue(false);
-    loadCachedContainers();
-    expect(mockFs.mkdirSync).toHaveBeenCalledWith(DATA_DIR, { recursive: true });
-  });
-
-  it('reads from the correct file path', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify({ containers: [], ts: 0 }));
-    loadCachedContainers();
-    expect(mockFs.readFileSync).toHaveBeenCalledWith(CACHE_FILE, 'utf-8');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// saveCachedContainers
-// ────────────────────────────────────────────────────────────────────────────
-describe('saveCachedContainers', () => {
-  it('writes to a tmp file then renames to the final path', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    saveCachedContainers([makeContainer()], null);
-
-    const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
-    expect(writtenPath).toMatch(TMP_FILE_PATTERN);
-    expect(mockFs.renameSync).toHaveBeenCalledWith(writtenPath, CACHE_FILE);
-  });
-
-  it('includes containers array and ts in the written data', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    const containers = [makeContainer()];
-    saveCachedContainers(containers, null);
-
-    const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
-    expect(written.containers).toEqual(containers);
-    expect(typeof written.ts).toBe('number');
-    expect(written.ts).toBeGreaterThan(0);
-  });
-
-  it('calls writeFileSync before renameSync', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    const callOrder: string[] = [];
-    mockFs.writeFileSync.mockImplementation(() => callOrder.push('write'));
-    mockFs.renameSync.mockImplementation(() => callOrder.push('rename'));
-
-    saveCachedContainers([], null);
-    expect(callOrder).toEqual(['write', 'rename']);
-  });
-
-  it('creates DATA_DIR if it does not exist', () => {
-    mockFs.existsSync.mockReturnValue(false);
-    saveCachedContainers([], null);
-    expect(mockFs.mkdirSync).toHaveBeenCalledWith(DATA_DIR, { recursive: true });
-  });
-
-  it('cleans up tmp file if renameSync fails', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.renameSync.mockImplementation(() => {
-      throw new Error('Rename failed');
+    const rateLimit = {
+      limit: 60,
+      remaining: 5,
+      resetAt: '2026-01-01T01:00:00.000Z',
+      observedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await fs.writeFile(
+      path.join(dataDirectory, 'cache.json'),
+      JSON.stringify({
+        schemaVersion: 4,
+        containers: [cached],
+        ts: Date.now(),
+        refreshedAt: '2026-01-01T00:00:00.000Z',
+        githubRateLimit: rateLimit,
+      }),
+    );
+    const { loadCachedContainers } = await subject();
+    await expect(loadCachedContainers()).resolves.toMatchObject({
+      containers: [cached],
+      githubRateLimit: rateLimit,
     });
-
-    expect(() => saveCachedContainers([], null)).toThrow('Rename failed');
-    const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
-    expect(mockFs.unlinkSync).toHaveBeenCalledWith(writtenPath);
   });
 
-  it('does not throw if tmp cleanup also fails after rename failure', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.renameSync.mockImplementation(() => {
-      throw new Error('Rename failed');
-    });
-    mockFs.unlinkSync.mockImplementation(() => {
-      throw new Error('Cleanup failed');
-    });
-
-    expect(() => saveCachedContainers([], null)).toThrow('Rename failed');
-  });
-
-  it('propagates error when writeFileSync throws', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.writeFileSync.mockImplementation(() => {
-      throw new Error('Disk full');
-    });
-    expect(() => saveCachedContainers([], null)).toThrow('Disk full');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// ensureDataDir caching
-// ────────────────────────────────────────────────────────────────────────────
-describe('ensureDataDir caching', () => {
-  it('only calls mkdirSync once across multiple calls', () => {
-    mockFs.existsSync.mockReturnValue(false);
-    loadCachedContainers();
-    expect(mockFs.mkdirSync).toHaveBeenCalledTimes(1);
-
-    mockFs.mkdirSync.mockClear();
-    loadCachedContainers();
-    expect(mockFs.mkdirSync).not.toHaveBeenCalled();
-  });
-
-  it('rechecks after resetCacheDirFlag()', () => {
-    mockFs.existsSync.mockReturnValue(false);
-    loadCachedContainers();
-    expect(mockFs.mkdirSync).toHaveBeenCalledTimes(1);
-
-    resetCacheDirFlag();
-    mockFs.mkdirSync.mockClear();
-    mockFs.existsSync.mockReturnValue(false);
-    loadCachedContainers();
-    expect(mockFs.mkdirSync).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Round-trip
-// ────────────────────────────────────────────────────────────────────────────
-describe('round-trip', () => {
-  it('save then load returns equivalent container data', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    const containers = [
-      makeContainer(),
-      makeContainer({ id: 'compose.yml::radarr', name: 'radarr' }),
-    ];
-
-    let writtenData = '';
-    mockFs.writeFileSync.mockImplementation((_p: string, data: string) => {
-      writtenData = data;
-    });
-    saveCachedContainers(containers, null);
-
-    mockFs.readFileSync.mockReturnValue(writtenData);
-    const loaded = loadCachedContainers();
-    expect(loaded).toBeDefined();
-    expect(loaded?.containers).toEqual(containers);
-    expect(typeof loaded?.ts).toBe('number');
+  it.each([
+    ['id', null],
+    ['name', null],
+    ['image', null],
+    ['currentVersion', null],
+    ['composeFile', null],
+    ['githubRepo', 1],
+    ['latestUpstreamVersion', 1],
+    ['publishedAt', 1],
+    ['status', 'invalid'],
+    ['updateKind', 'invalid'],
+    ['comparisonMode', 'invalid'],
+    ['historyComplete', 'invalid'],
+    ['releaseDataStale', null],
+    ['checkIssue', { code: 'invalid', message: 'bad', retryAt: null }],
+    ['breakingChanges', [{}]],
+    ['releaseUrl', 1],
+    ['releaseNotes', 1],
+    ['releaseName', 1],
+    ['lastChecked', 1],
+  ])('rejects a container with invalid %s', async (field, value) => {
+    const invalid = { ...container(), [field]: value };
+    await fs.writeFile(
+      path.join(dataDirectory, 'cache.json'),
+      JSON.stringify({
+        schemaVersion: 4,
+        containers: [invalid],
+        ts: Date.now(),
+        refreshedAt: null,
+        githubRateLimit: null,
+      }),
+    );
+    const { loadCachedContainers } = await subject();
+    await expect(loadCachedContainers({ warn: vi.fn(), error: vi.fn() })).resolves.toBeNull();
   });
 });

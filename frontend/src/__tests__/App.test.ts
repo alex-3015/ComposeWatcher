@@ -1,799 +1,226 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mount, flushPromises } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from '../App.vue';
-import type { ContainersMeta, ContainerInfo } from '../types';
+import type { ContainerSummary, RefreshMeta } from '../types';
+import { detail, idleRefresh, meta, summary } from './factories';
 
-// ── fetch mock ────────────────────────────────────────────────────────────────
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
-afterEach(() => {
-  vi.clearAllMocks();
-  localStorage.clear();
-});
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
-  return {
-    id: 'docker-compose.yml::sonarr',
-    name: 'sonarr',
-    image: 'ghcr.io/linuxserver/sonarr',
-    currentVersion: '4.0.0',
-    composeFile: 'docker-compose.yml',
-    githubRepo: 'linuxserver/sonarr',
-    latestUpstreamVersion: '4.0.0',
-    publishedAt: '2024-01-01T00:00:00Z',
-    status: 'up-to-date',
-    updateKind: null,
-    comparisonMode: 'exact',
-    historyComplete: true,
-    releaseDataStale: false,
-    checkIssue: null,
-    breakingChanges: [],
-    releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
-    releaseNotes: null,
-    releaseName: null,
-    lastChecked: '2024-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
-
-function mockHeaders(entries: Record<string, string> = {}) {
-  return { get: (name: string) => entries[name] ?? null };
-}
-
-function mockContainersResponse(containers: ContainerInfo[], meta: Partial<ContainersMeta> = {}) {
-  fetchMock.mockResolvedValueOnce({
-    ok: true,
-    status: 200,
-    json: () =>
-      Promise.resolve({
-        data: containers,
-        meta: {
-          stale: false,
-          refreshing: false,
-          refreshedAt: '2026-07-13T14:00:00.000Z',
-          refreshError: null,
-          githubRateLimit: null,
-          ...meta,
-        },
-      }),
-    text: () => Promise.resolve(''),
-    headers: mockHeaders(),
-  });
-}
-
-function mockErrorResponse() {
-  fetchMock.mockResolvedValueOnce({
-    ok: false,
-    status: 500,
-    json: () =>
-      Promise.resolve({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error.' } }),
-    text: () => Promise.resolve('Server error'),
-    headers: mockHeaders(),
-  });
-}
-
-const globalStubs = {
+const global = {
   stubs: [
     'Container',
     'RefreshCw',
     'CheckCircle',
     'AlertTriangle',
     'AlertCircle',
-    'HelpCircle',
     'Package',
     'ExternalLink',
     'GitBranch',
-    'AlertTriangle',
     'X',
     'Search',
     'ChevronDown',
     'FolderOpen',
-    'TrendingUp',
     'LayoutGrid',
     'List',
+    'PanelRightOpen',
+    'LoaderCircle',
   ],
 };
 
-// ────────────────────────────────────────────────────────────────────────────
-// Loading state
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – loading state', () => {
-  it('shows loading text while fetch is in progress', async () => {
-    // Mock a never-resolving promise so loading stays true
+function response(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+  } as unknown as Response;
+}
+
+function listResponse(
+  containers: ContainerSummary[],
+  refresh: RefreshMeta = idleRefresh,
+): Response {
+  return response({ data: containers, meta: meta({ refresh }) });
+}
+
+async function mountLoaded(containers: ContainerSummary[]): Promise<VueWrapper> {
+  fetchMock.mockResolvedValueOnce(listResponse(containers));
+  const wrapper = mount(App, { global });
+  await flushPromises();
+  return wrapper;
+}
+
+afterEach(() => {
+  fetchMock.mockReset();
+  localStorage.clear();
+  vi.useRealTimers();
+});
+
+describe('v3 dashboard', () => {
+  it('shows loading, data, empty, and initial error states', async () => {
     fetchMock.mockReturnValueOnce(new Promise(() => {}));
-    const w = mount(App, { global: globalStubs });
-    expect(w.text()).toContain('Scanning containers');
-  });
+    const loading = mount(App, { global });
+    expect(loading.text()).toContain('Scanning containers');
+    loading.unmount();
 
-  it('hides loading text after fetch completes', async () => {
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).not.toContain('Scanning containers');
-  });
-});
+    const populated = await mountLoaded([summary()]);
+    expect(populated.text()).toContain('1 containers across 1 Compose files');
+    expect(populated.text()).toContain('sonarr');
+    populated.unmount();
 
-// ────────────────────────────────────────────────────────────────────────────
-// Successful data load
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – container display', () => {
-  it('renders a card for each container returned by the API', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a::sonarr', name: 'sonarr' }),
-      makeContainer({ id: 'b::radarr', name: 'radarr' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('sonarr');
-    expect(w.text()).toContain('radarr');
-  });
+    const empty = await mountLoaded([]);
+    expect(empty.text()).toContain('No containers found');
+    empty.unmount();
 
-  it('shows container count in header subtitle', async () => {
-    mockContainersResponse([makeContainer(), makeContainer({ id: 'b::radarr', name: 'radarr' })]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('2 containers found');
-  });
-
-  it('uses singular form for exactly 1 container', async () => {
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('1 container found');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Error state
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – error state', () => {
-  it('shows error message when API returns non-ok response', async () => {
-    mockErrorResponse();
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('Error loading containers');
-  });
-
-  it('shows error message when fetch throws', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('Network failure'));
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('Error loading containers');
-  });
-
-  it('shows "Try again" link in error state', async () => {
-    mockErrorResponse();
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('Try again');
-  });
-
-  it('"Try again" re-fetches data on click', async () => {
-    mockErrorResponse();
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const retryBtn = w.findAll('button').find((b) => b.text() === 'Try again');
-    await retryBtn!.trigger('click');
-    await flushPromises();
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(w.text()).not.toContain('Error loading containers');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Empty state
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – empty state', () => {
-  it('shows empty state message when no containers are returned', async () => {
-    mockContainersResponse([]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    expect(w.text()).toContain('No containers found');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Stat cards
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – stat cards', () => {
-  it('shows correct count for each status category', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', status: 'breaking-change' }),
-      makeContainer({ id: 'b', status: 'update-available' }),
-      makeContainer({ id: 'c', status: 'update-available' }),
-      makeContainer({ id: 'd', status: 'up-to-date' }),
-      makeContainer({ id: 'e', status: 'no-repo' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const text = w.text();
-    // Each count appears once in the stat cards
-    // Breaking: 1, Updates: 2, Up-to-date: 1, No repo: 1
-    expect(text).toContain('Breaking');
-    expect(text).toContain('Updates');
-    expect(text).toContain('Up to date');
-    expect(text).toContain('No repo');
-  });
-
-  it('hides stat cards during loading', async () => {
-    fetchMock.mockReturnValueOnce(new Promise(() => {}));
-    const w = mount(App, { global: globalStubs });
-    expect(w.text()).not.toContain('Breaking');
-  });
-
-  it('uses every status card as a toggleable filter', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'ahead-app', status: 'ahead' }),
-      makeContainer({ id: 'b', name: 'unknown-app', status: 'unknown' }),
-      makeContainer({ id: 'c', name: 'unlinked-app', status: 'no-repo' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    for (const label of ['Ahead', 'Unknown', 'No repo']) {
-      const card = w.findAll('button.rounded-xl').find((button) => button.text().includes(label))!;
-      await card.trigger('click');
-      expect(card.attributes('aria-pressed')).toBe('true');
-      await card.trigger('click');
-      expect(card.attributes('aria-pressed')).toBe('false');
-    }
-    w.unmount();
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Filters
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – filters', () => {
-  async function mountWithFilters() {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'breaker', status: 'breaking-change' }),
-      makeContainer({ id: 'b', name: 'updater', status: 'update-available' }),
-      makeContainer({ id: 'c', name: 'current', status: 'up-to-date' }),
-      makeContainer({ id: 'd', name: 'norepo', status: 'no-repo' }),
-      makeContainer({ id: 'e', name: 'mystery', status: 'unknown' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    return w;
-  }
-
-  it('shows all containers with "All" filter (default)', async () => {
-    const w = await mountWithFilters();
-    expect(w.text()).toContain('breaker');
-    expect(w.text()).toContain('updater');
-    expect(w.text()).toContain('current');
-  });
-
-  it('filters to only breaking-change containers', async () => {
-    const w = await mountWithFilters();
-    const filterBtns = w.findAll('button').filter((b) => b.text().includes('Breaking'));
-    await filterBtns[0].trigger('click');
-
-    expect(w.text()).toContain('breaker');
-    expect(w.text()).not.toContain('updater');
-    expect(w.text()).not.toContain('current');
-  });
-
-  it('filters to only update-available containers', async () => {
-    const w = await mountWithFilters();
-    const filterBtns = w.findAll('button').filter((b) => b.text().includes('Updates'));
-    await filterBtns[0].trigger('click');
-
-    expect(w.text()).toContain('updater');
-    expect(w.text()).not.toContain('breaker');
-  });
-
-  it('filters to only up-to-date containers', async () => {
-    const w = await mountWithFilters();
-    const filterBtns = w.findAll('button').filter((b) => b.text().includes('Up to date'));
-    await filterBtns[0].trigger('click');
-
-    expect(w.text()).toContain('current');
-    expect(w.text()).not.toContain('breaker');
-    expect(w.text()).not.toContain('updater');
-  });
-
-  it('shows "No containers match this filter" when filter has no results', async () => {
-    mockContainersResponse([makeContainer({ status: 'up-to-date' })]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    // Click "Breaking" filter (no breaking containers exist)
-    const filterBtns = w.findAll('button').filter((b) => b.text().includes('Breaking'));
-    await filterBtns[0].trigger('click');
-
-    expect(w.text()).toContain('No containers match this filter');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Search
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – search', () => {
-  it('filters containers by name (case-insensitive)', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'a/docker-compose.yml' }),
-      makeContainer({
-        id: 'b',
-        name: 'radarr',
-        image: 'lscr.io/linuxserver/radarr',
-        composeFile: 'b/docker-compose.yml',
-      }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const searchInput = w.find('input[placeholder="Search containers..."]');
-    await searchInput.setValue('SONARR');
-    await flushPromises();
-
-    expect(w.text()).toContain('sonarr');
-    expect(w.text()).not.toContain('radarr');
-  });
-
-  it('filters containers by image (case-insensitive)', async () => {
-    mockContainersResponse([
-      makeContainer({
-        id: 'a',
-        name: 'app1',
-        image: 'ghcr.io/linuxserver/sonarr',
-        composeFile: 'a/docker-compose.yml',
-      }),
-      makeContainer({
-        id: 'b',
-        name: 'app2',
-        image: 'gitea/gitea',
-        composeFile: 'b/docker-compose.yml',
-      }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const searchInput = w.find('input[placeholder="Search containers..."]');
-    await searchInput.setValue('gitea');
-    await flushPromises();
-
-    expect(w.text()).toContain('app2');
-    expect(w.text()).not.toContain('app1');
-  });
-
-  it('shows "No containers match your search" when search has no results', async () => {
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const searchInput = w.find('input[placeholder="Search containers..."]');
-    await searchInput.setValue('nonexistent');
-    await flushPromises();
-
-    expect(w.text()).toContain('No containers match your search');
-  });
-
-  it('shows all containers when search is cleared', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'a/docker-compose.yml' }),
-      makeContainer({
-        id: 'b',
-        name: 'radarr',
-        image: 'lscr.io/linuxserver/radarr',
-        composeFile: 'b/docker-compose.yml',
-      }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const searchInput = w.find('input[placeholder="Search containers..."]');
-    await searchInput.setValue('sonarr');
-    await flushPromises();
-    expect(w.text()).not.toContain('radarr');
-
-    await searchInput.setValue('');
-    await flushPromises();
-    expect(w.text()).toContain('sonarr');
-    expect(w.text()).toContain('radarr');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Grouping
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – grouping', () => {
-  it('groups containers by composeFile', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'media/docker-compose.yml' }),
-      makeContainer({ id: 'b', name: 'radarr', composeFile: 'media/docker-compose.yml' }),
-      makeContainer({ id: 'c', name: 'gitea', composeFile: 'git/docker-compose.yml' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    expect(w.text()).toContain('media/docker-compose.yml');
-    expect(w.text()).toContain('git/docker-compose.yml');
-  });
-
-  it('sorts groups with breaking/updates first', async () => {
-    mockContainersResponse([
-      makeContainer({
-        id: 'a',
-        name: 'ok-app',
-        composeFile: 'aaa/docker-compose.yml',
-        status: 'up-to-date',
-      }),
-      makeContainer({
-        id: 'b',
-        name: 'breaker',
-        composeFile: 'zzz/docker-compose.yml',
-        status: 'breaking-change',
-      }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const text = w.text();
-    // zzz group should come first (has breaking changes)
-    expect(text.indexOf('zzz/docker-compose.yml')).toBeLessThan(
-      text.indexOf('aaa/docker-compose.yml'),
+    fetchMock.mockResolvedValueOnce(
+      response({ error: { code: 'INTERNAL_ERROR', message: 'Backend unavailable' } }, 500),
     );
+    const failed = mount(App, { global });
+    await flushPromises();
+    expect(failed.get('[role="alert"]').text()).toContain('Backend unavailable');
+    failed.unmount();
   });
 
-  it('can collapse and expand groups', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'sonarr', composeFile: 'media/docker-compose.yml' }),
+  it('filters the action views and searches all requested summary fields', async () => {
+    const wrapper = await mountLoaded([
+      summary({ id: 'a', name: 'breaking', status: 'breaking-change' }),
+      summary({ id: 'b', name: 'update', status: 'update-available', githubRepo: 'special/repo' }),
+      summary({ id: 'c', name: 'stale', status: 'unknown', composeFile: 'infra/compose.yml' }),
+      summary({ id: 'd', name: 'current', status: 'up-to-date', image: 'custom/image:1' }),
     ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
 
-    // Initially expanded - container name is visible
-    expect(w.text()).toContain('sonarr');
-
-    // Click group header to collapse
-    const groupBtn = w.findAll('button').find((b) => b.text().includes('media/docker-compose.yml'));
-    await groupBtn!.trigger('click');
-
-    // Container should be hidden (v-show=false), but text still in DOM
-    // The group header should still be visible
-    expect(w.text()).toContain('media/docker-compose.yml');
-  });
-
-  it('shows group counts', async () => {
-    mockContainersResponse([
-      makeContainer({
-        id: 'a',
-        name: 'sonarr',
-        composeFile: 'media/docker-compose.yml',
-        status: 'breaking-change',
-      }),
-      makeContainer({
-        id: 'b',
-        name: 'radarr',
-        composeFile: 'media/docker-compose.yml',
-        status: 'update-available',
-      }),
-      makeContainer({
-        id: 'c',
-        name: 'ok',
-        composeFile: 'media/docker-compose.yml',
-        status: 'up-to-date',
-      }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    expect(w.text()).toContain('1 breaking');
-    expect(w.text()).toContain('1 update');
-    expect(w.text()).toContain('3 containers');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Refresh
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – refresh', () => {
-  it('aborts an obsolete request when a refresh starts', async () => {
-    let initialSignal: AbortSignal | undefined;
-    fetchMock.mockImplementationOnce((_url: string, options: RequestInit) => {
-      initialSignal = options.signal as AbortSignal;
-      return new Promise((_resolve, reject) => {
-        initialSignal?.addEventListener('abort', () =>
-          reject(new DOMException('aborted', 'AbortError')),
-        );
-      });
-    });
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await w.vm.$nextTick();
-
-    const refreshBtn = w.findAll('button').find((button) => button.text().includes('Refresh'));
-    await refreshBtn!.trigger('click');
-    await flushPromises();
-
-    expect(initialSignal?.aborted).toBe(true);
-    expect(w.text()).toContain('sonarr');
-  });
-
-  it('Refresh button calls API with ?refresh=true', async () => {
-    mockContainersResponse([makeContainer()]);
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const refreshBtn = w.findAll('button').find((b) => b.text().includes('Refresh'));
-    await refreshBtn!.trigger('click');
-    await flushPromises();
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [secondUrl] = fetchMock.mock.calls[1];
-    expect(secondUrl).toContain('refresh=true');
-  });
-
-  it('initial load does NOT include ?refresh=true', async () => {
-    mockContainersResponse([]);
-    mount(App, { global: globalStubs });
-    await flushPromises();
-
-    const [firstUrl] = fetchMock.mock.calls[0];
-    expect(firstUrl).not.toContain('refresh=true');
-  });
-});
-
-describe('App – refresh metadata and diagnostics', () => {
-  it('shows when cached data is stale', async () => {
-    mockContainersResponse([makeContainer()], { stale: true });
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    expect(w.text()).toContain('Showing cached data');
-  });
-
-  it('shows a backend refresh error without hiding cached containers', async () => {
-    mockContainersResponse([makeContainer()], {
-      stale: true,
-      refreshError: { code: 'REFRESH_FAILED', message: 'Container refresh failed.' },
-    });
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    expect(w.text()).toContain('Refresh failed: Container refresh failed.');
-    expect(w.text()).toContain('sonarr');
-  });
-
-  it('aggregates and dismisses rate-limit diagnostics', async () => {
-    const checkIssue = {
-      code: 'rate-limited' as const,
-      message: 'GitHub API rate limit reached.',
-      retryAt: '2026-07-13T16:00:00.000Z',
-    };
-    mockContainersResponse([
-      makeContainer({ id: 'a::one', checkIssue }),
-      makeContainer({ id: 'b::two', checkIssue }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    expect(w.text()).toContain('Affected containers: 2');
-    const dismiss = w
+    await wrapper
       .findAll('button')
-      .find((button) => button.attributes('aria-label')?.includes('rate-limited'));
-    await dismiss!.trigger('click');
-    expect(w.text()).not.toContain('Affected containers: 2');
-  });
-});
+      .find((button) => button.text().includes('Needs attention'))!
+      .trigger('click');
+    expect(wrapper.text()).toContain('stale');
+    expect(wrapper.text()).not.toContain('current');
 
-// ────────────────────────────────────────────────────────────────────────────
-// Sort order
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – card sort order', () => {
-  it('renders containers in priority order', async () => {
-    // Provide in reverse order to verify sorting is applied
-    mockContainersResponse([
-      makeContainer({ id: 'e', name: 'mystery', status: 'unknown' }),
-      makeContainer({ id: 'd', name: 'norepo', status: 'no-repo' }),
-      makeContainer({ id: 'c', name: 'current', status: 'up-to-date' }),
-      makeContainer({ id: 'b', name: 'updater', status: 'update-available' }),
-      makeContainer({ id: 'a', name: 'breaker', status: 'breaking-change' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().startsWith('All '))!
+      .trigger('click');
+    await wrapper.get('#container-search').setValue('special/repo');
+    expect(wrapper.text()).toContain('update');
+    expect(wrapper.text()).not.toContain('breaking');
 
-    const text = w.text();
-    const positions = {
-      breaker: text.indexOf('breaker'),
-      updater: text.indexOf('updater'),
-      current: text.indexOf('current'),
-      norepo: text.indexOf('norepo'),
-      mystery: text.indexOf('mystery'),
-    };
-
-    expect(positions.breaker).toBeLessThan(positions.updater);
-    expect(positions.updater).toBeLessThan(positions.mystery);
-    expect(positions.mystery).toBeLessThan(positions.norepo);
-    expect(positions.norepo).toBeLessThan(positions.current);
+    await wrapper.get('#container-search').setValue('infra/compose');
+    expect(wrapper.text()).toContain('stale');
+    wrapper.unmount();
   });
 
-  it('sort order is preserved when a status filter is active', async () => {
-    // Two update-available containers — order within same status is stable (insertion order)
-    mockContainersResponse([
-      makeContainer({ id: 'b', name: 'second', status: 'update-available' }),
-      makeContainer({ id: 'a', name: 'first', status: 'update-available' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
+  it('fetches large detail fields only after opening the panel', async () => {
+    fetchMock
+      .mockResolvedValueOnce(listResponse([summary()]))
+      .mockResolvedValueOnce(response({ data: detail() }));
+    const wrapper = mount(App, { global });
     await flushPromises();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const filterBtns = w.findAll('button').filter((b) => b.text().includes('Updates'));
-    await filterBtns[0].trigger('click');
-
-    const text = w.text();
-    // Stable sort: both are update-available, original order preserved
-    expect(text.indexOf('second')).toBeLessThan(text.indexOf('first'));
-  });
-
-  it('shows all containers regardless of sort after filter reset to All', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'a', name: 'breaker', status: 'breaking-change' }),
-      makeContainer({ id: 'b', name: 'current', status: 'up-to-date' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('View details'))!
+      .trigger('click');
     await flushPromises();
-
-    // Filter to up-to-date
-    const filterBtns = w.findAll('button').filter((b) => b.text().includes('Up to date'));
-    await filterBtns[0].trigger('click');
-    expect(w.text()).not.toContain('breaker');
-
-    // Reset to All
-    const allBtn = w.findAll('button').find((b) => b.text().trim().startsWith('All'));
-    await allBtn!.trigger('click');
-    expect(w.text()).toContain('breaker');
-    expect(w.text()).toContain('current');
-  });
-});
-
-describe('App – dashboard preferences and views', () => {
-  it('switches to compact view and persists the choice', async () => {
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    await w.get('button[aria-label="Compact view"]').trigger('click');
-
-    expect(w.find('button[aria-label^="Show details for sonarr"]').exists()).toBe(true);
-    expect(JSON.parse(localStorage.getItem('compose-watcher:dashboard:v1') ?? '{}')).toMatchObject({
-      viewMode: 'compact',
-    });
-    w.unmount();
-  });
-
-  it('sorts containers alphabetically when Name is selected', async () => {
-    mockContainersResponse([
-      makeContainer({ id: 'z', name: 'zulu' }),
-      makeContainer({ id: 'a', name: 'alpha' }),
-    ]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    await w.get('#container-sort').setValue('name');
-
-    expect(w.text().indexOf('alpha')).toBeLessThan(w.text().indexOf('zulu'));
-    w.unmount();
-  });
-
-  it('falls back safely when stored preferences are invalid', async () => {
-    localStorage.setItem('compose-watcher:dashboard:v1', '{invalid');
-    mockContainersResponse([makeContainer()]);
-
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    expect(w.text()).toContain('sonarr');
-    expect(w.get('button[aria-label="Card view"]').attributes('aria-pressed')).toBe('true');
-    w.unmount();
-  });
-
-  it('refreshes automatically every five minutes while visible', async () => {
-    vi.useFakeTimers();
-    try {
-      mockContainersResponse([makeContainer()]);
-      mockContainersResponse([makeContainer({ currentVersion: '4.0.1' })]);
-      const w = mount(App, { global: globalStubs });
-      await flushPromises();
-
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-      await flushPromises();
-
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(fetchMock.mock.calls[1][0]).toBe('/api/containers');
-      w.unmount();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// Repo modal integration
-// ────────────────────────────────────────────────────────────────────────────
-describe('App – repo modal', () => {
-  it('modal is not shown initially', async () => {
-    mockContainersResponse([makeContainer()]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-    // RepoModal has a fixed overlay with specific class
-    expect(w.find('.fixed.inset-0').exists()).toBe(false);
-  });
-
-  it('opens modal when a ContainerCard emits "link-repo"', async () => {
-    mockContainersResponse([makeContainer({ githubRepo: null, status: 'no-repo' })]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    // Find the link-repo button (last button in the card footer)
-    const buttons = w.findAll('button');
-    const linkRepoBtn = buttons.find((b) => b.text().includes('Link repo'));
-    await linkRepoBtn!.trigger('click');
-
-    expect(w.find('.fixed.inset-0').exists()).toBe(true);
-  });
-
-  it('closes modal when RepoModal emits "close"', async () => {
-    mockContainersResponse([makeContainer({ githubRepo: null, status: 'no-repo' })]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    // Open modal
-    const linkRepoBtn = w.findAll('button').find((b) => b.text().includes('Link repo'));
-    await linkRepoBtn!.trigger('click');
-    expect(w.find('.fixed.inset-0').exists()).toBe(true);
-
-    // Close via Cancel
-    const cancelBtn = w.findAll('button').find((b) => b.text() === 'Cancel');
-    await cancelBtn!.trigger('click');
-    expect(w.find('.fixed.inset-0').exists()).toBe(false);
-  });
-
-  it('calls POST API and refreshes after save', async () => {
-    mockContainersResponse([makeContainer({ githubRepo: null, status: 'no-repo' })]);
-    const w = mount(App, { global: globalStubs });
-    await flushPromises();
-
-    // Open modal
-    const linkRepoBtn = w.findAll('button').find((b) => b.text().includes('Link repo'));
-    await linkRepoBtn!.trigger('click');
-
-    // Set repo value and save — find the input inside the modal overlay
-    const modalInput = w.find('.fixed.inset-0 input');
-    await modalInput.setValue('myorg/myapp');
-
-    // Mock the POST response and the subsequent GET refresh
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: () =>
-        Promise.resolve({
-          data: { id: 'docker-compose.yml::sonarr', githubRepo: 'myorg/myapp' },
-        }),
-      text: () => Promise.resolve(''),
-    });
-    mockContainersResponse([makeContainer({ githubRepo: 'myorg/myapp', status: 'unknown' })]);
-
-    const saveBtn = w.findAll('button').find((b) => b.text() === 'Save');
-    await saveBtn!.trigger('click');
-    await flushPromises();
-
-    // POST to /api/containers/:id/repo
-    const postCall = fetchMock.mock.calls.find(
-      ([url, opts]) =>
-        (url as string).includes('/api/containers') && (opts as RequestInit)?.method === 'POST',
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/containers/docker-compose.yml%3A%3Asonarr',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(postCall).toBeTruthy();
-    const [, postOpts] = postCall!;
-    expect(JSON.parse((postOpts as RequestInit).body as string)).toEqual({ repo: 'myorg/myapp' });
+    await vi.waitFor(() => expect(wrapper.get('[role="dialog"]').text()).toContain('Sonarr 4.1.0'));
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Sonarr 4.1.0'))!
+      .trigger('click');
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Improvements');
+    wrapper.unmount();
+  });
+
+  it('starts an asynchronous refresh and polls while it is running', async () => {
+    vi.useFakeTimers();
+    const running = { ...idleRefresh, state: 'running' as const, scope: 'all' as const };
+    fetchMock
+      .mockResolvedValueOnce(listResponse([summary()]))
+      .mockResolvedValueOnce(response({ data: running }))
+      .mockResolvedValueOnce(listResponse([summary()], idleRefresh));
+    const wrapper = mount(App, { global });
+    await flushPromises();
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Refresh')!
+      .trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Checking…');
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/refresh', { method: 'POST' });
+
+    await vi.advanceTimersByTimeAsync(1500);
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      wrapper.findAll('[role="status"]').some((node) => node.text().includes('background')),
+    ).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('updates a repository and keeps the new pending summary in the dashboard', async () => {
+    const updated = summary({ githubRepo: 'custom/sonarr', dataState: 'pending' });
+    fetchMock.mockResolvedValueOnce(listResponse([summary()])).mockResolvedValueOnce(
+      response({
+        data: updated,
+        meta: {
+          refresh: {
+            ...idleRefresh,
+            state: 'running',
+            scope: 'container',
+            containerId: updated.id,
+          },
+        },
+      }),
+    );
+    const wrapper = mount(App, { global });
+    await flushPromises();
+    await wrapper.get('[aria-label="Edit GitHub repository for sonarr"]').trigger('click');
+    await wrapper.get('#github-repository').setValue('custom/sonarr');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Save')!
+      .trigger('click');
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/containers/docker-compose.yml%3A%3Asonarr/repository',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ repo: 'custom/sonarr' }) }),
+    );
+    expect(wrapper.text()).toContain('custom/sonarr');
+    expect(wrapper.text()).toContain('pending data');
+    wrapper.unmount();
+  });
+
+  it('surfaces low GitHub rate limits and refresh failures without dropping cached data', async () => {
+    fetchMock.mockResolvedValueOnce(
+      response({
+        data: [summary({ dataState: 'stale' })],
+        meta: meta({
+          refresh: {
+            ...idleRefresh,
+            state: 'failed',
+            error: { code: 'REFRESH_FAILED', message: 'GitHub unavailable' },
+          },
+          githubRateLimit: {
+            limit: 60,
+            remaining: 2,
+            resetAt: '2026-07-13T13:00:00.000Z',
+            observedAt: '2026-07-13T12:00:00.000Z',
+          },
+        }),
+      }),
+    );
+    const wrapper = mount(App, { global });
+    await flushPromises();
+    expect(wrapper.text()).toContain('Refresh failed: GitHub unavailable');
+    expect(wrapper.text()).toContain('2 of 60 requests remaining');
+    expect(wrapper.text()).toContain('sonarr');
+    wrapper.unmount();
   });
 });

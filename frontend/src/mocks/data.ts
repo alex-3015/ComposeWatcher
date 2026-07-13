@@ -1,22 +1,32 @@
-import type { ContainerInfo } from '../types';
+import type { ContainerDetail, ContainerSummary } from '../types';
 
 type DefaultedFields =
-  'updateKind' | 'comparisonMode' | 'historyComplete' | 'releaseDataStale' | 'breakingChanges';
+  | 'updateKind'
+  | 'comparisonMode'
+  | 'historyComplete'
+  | 'breakingChanges'
+  | 'dataState'
+  | 'iconUrl'
+  | 'breakingChangeCount';
 
 function mockContainer(
-  container: Omit<ContainerInfo, DefaultedFields> & Partial<Pick<ContainerInfo, DefaultedFields>>,
-): ContainerInfo {
-  return {
+  container: Omit<ContainerDetail, DefaultedFields> &
+    Partial<Pick<ContainerDetail, DefaultedFields>>,
+): ContainerDetail {
+  const detail: ContainerDetail = {
     updateKind: null,
     comparisonMode: 'exact',
     historyComplete: true,
-    releaseDataStale: false,
     breakingChanges: [],
+    dataState: container.githubRepo ? 'fresh' : 'unlinked',
+    iconUrl: `/icons/${encodeURIComponent(container.name)}.png`,
+    breakingChangeCount: container.breakingChanges?.length ?? 0,
     ...container,
   };
+  return { ...detail, breakingChangeCount: detail.breakingChanges.length };
 }
 
-export const mockContainers: ContainerInfo[] = [
+export const mockContainerDetails: ContainerDetail[] = [
   mockContainer({
     id: 'media-stack/docker-compose.yml::sonarr',
     name: 'sonarr',
@@ -200,3 +210,14 @@ export const mockContainers: ContainerInfo[] = [
     lastChecked: '2025-03-01T12:00:00Z',
   }),
 ];
+
+function toSummary(detail: ContainerDetail): ContainerSummary {
+  const summary: Partial<ContainerDetail> = { ...detail };
+  delete summary.historyComplete;
+  delete summary.releaseName;
+  delete summary.releaseNotes;
+  delete summary.breakingChanges;
+  return summary as ContainerSummary;
+}
+
+export const mockContainers: ContainerSummary[] = mockContainerDetails.map(toSummary);

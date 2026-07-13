@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { ContainerInfo } from '../types';
+import type { ContainerStatus } from '../types';
 import { STATUS_THEME } from '../theme';
 
-const props = defineProps<{ status: ContainerInfo['status'] }>();
+const props = defineProps<{ status: ContainerStatus }>();
 
 const theme = computed(() => STATUS_THEME[props.status] ?? STATUS_THEME['unknown']);
 </script>

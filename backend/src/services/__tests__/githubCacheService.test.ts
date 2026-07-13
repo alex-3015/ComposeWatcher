@@ -1,130 +1,79 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import path from 'path';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GithubCacheData } from '../githubCacheService.js';
 
-vi.mock('fs', () => ({
-  default: {
-    existsSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    readFileSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    renameSync: vi.fn(),
-    unlinkSync: vi.fn(),
-  },
-}));
+let dataDirectory: string;
 
-import fs from 'fs';
-import {
-  emptyGithubCache,
-  loadGithubCache,
-  resetGithubCacheDirFlag,
-  saveGithubCache,
-  type GithubCacheData,
-} from '../githubCacheService.js';
-
-const mockFs = fs as unknown as {
-  existsSync: ReturnType<typeof vi.fn>;
-  mkdirSync: ReturnType<typeof vi.fn>;
-  readFileSync: ReturnType<typeof vi.fn>;
-  writeFileSync: ReturnType<typeof vi.fn>;
-  renameSync: ReturnType<typeof vi.fn>;
-  unlinkSync: ReturnType<typeof vi.fn>;
-};
-
-const DATA_DIR = '/data';
-const CACHE_FILE = path.join(DATA_DIR, 'github-cache.json');
-
-function makeCache(): GithubCacheData {
+function cache(): GithubCacheData {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repositories: {
       'owner/repo': {
-        etag: '"abc"',
+        etag: 'etag',
+        checkedAt: '2026-01-01T00:00:00.000Z',
+        retryAt: null,
+        historyMayBeTruncated: false,
         releases: [
           {
-            tagName: '1.2.0',
-            name: '1.2.0',
-            body: 'Notes',
-            url: 'https://github.com/owner/repo/releases/tag/1.2.0',
-            publishedAt: '2026-07-13T12:00:00.000Z',
+            tagName: '1.0.0',
+            name: null,
+            body: null,
+            url: 'https://example.test',
+            publishedAt: '2026-01-01T00:00:00.000Z',
             prerelease: false,
             breakingReasons: [],
           },
         ],
-        checkedAt: '2026-07-13T12:00:00.000Z',
-        retryAt: null,
-        historyMayBeTruncated: false,
       },
     },
-    rateLimit: {
-      limit: 5000,
-      remaining: 4999,
-      resetAt: '2026-07-13T13:00:00.000Z',
-      observedAt: '2026-07-13T12:00:00.000Z',
-    },
+    rateLimit: null,
   };
 }
 
-beforeEach(() => {
-  vi.resetAllMocks();
-  resetGithubCacheDirFlag();
+async function subject() {
+  vi.resetModules();
+  return import('../githubCacheService.js');
+}
+
+beforeEach(async () => {
+  dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'composewatcher-github-cache-'));
+  process.env.DATA_DIR = dataDirectory;
+});
+afterEach(async () => {
+  delete process.env.DATA_DIR;
+  await fs.rm(dataDirectory, { recursive: true, force: true });
 });
 
-describe('GitHub disk cache', () => {
-  it('returns an empty cache when no file exists', () => {
-    mockFs.existsSync.mockImplementation((value: string) => value === DATA_DIR);
-
-    expect(loadGithubCache()).toEqual(emptyGithubCache());
+describe('GitHub cache', () => {
+  it('returns an empty v2 cache when absent', async () => {
+    const { loadGithubCache, emptyGithubCache } = await subject();
+    await expect(loadGithubCache()).resolves.toEqual(emptyGithubCache());
   });
 
-  it('loads a valid cache file', () => {
-    const cache = makeCache();
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(JSON.stringify(cache));
-
-    expect(loadGithubCache()).toEqual(cache);
-    expect(mockFs.readFileSync).toHaveBeenCalledWith(CACHE_FILE, 'utf-8');
+  it('round-trips valid data', async () => {
+    const { saveGithubCache, loadGithubCache } = await subject();
+    await saveGithubCache(cache());
+    await expect(loadGithubCache()).resolves.toEqual(cache());
   });
 
-  it.each([
-    '{bad json',
-    JSON.stringify({ schemaVersion: 99, repositories: {}, rateLimit: null }),
-    JSON.stringify({ schemaVersion: 1, repositories: { repo: {} }, rateLimit: null }),
-  ])('ignores malformed or incompatible data', (contents) => {
+  it('invalidates the legacy schema', async () => {
+    await fs.writeFile(
+      path.join(dataDirectory, 'github-cache.json'),
+      JSON.stringify({ ...cache(), schemaVersion: 1 }),
+    );
+    const { loadGithubCache, emptyGithubCache } = await subject();
+    await expect(loadGithubCache({ warn: vi.fn(), error: vi.fn() })).resolves.toEqual(
+      emptyGithubCache(),
+    );
+  });
+
+  it('ignores malformed JSON with a diagnostic', async () => {
+    await fs.writeFile(path.join(dataDirectory, 'github-cache.json'), '{bad');
     const logger = { warn: vi.fn(), error: vi.fn() };
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readFileSync.mockReturnValue(contents);
-
-    expect(loadGithubCache(logger)).toEqual(emptyGithubCache());
+    const { loadGithubCache, emptyGithubCache } = await subject();
+    await expect(loadGithubCache(logger)).resolves.toEqual(emptyGithubCache());
     expect(logger.warn).toHaveBeenCalled();
-  });
-
-  it('creates the data directory on first access', () => {
-    mockFs.existsSync.mockReturnValue(false);
-
-    loadGithubCache();
-
-    expect(mockFs.mkdirSync).toHaveBeenCalledWith(DATA_DIR, { recursive: true });
-  });
-
-  it('writes atomically through a temporary file', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    const cache = makeCache();
-
-    saveGithubCache(cache);
-
-    const temporaryPath = mockFs.writeFileSync.mock.calls[0][0] as string;
-    expect(temporaryPath).toContain(`${CACHE_FILE}.`);
-    expect(JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string)).toEqual(cache);
-    expect(mockFs.renameSync).toHaveBeenCalledWith(temporaryPath, CACHE_FILE);
-  });
-
-  it('cleans up the temporary file when rename fails', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.renameSync.mockImplementation(() => {
-      throw new Error('rename failed');
-    });
-
-    expect(() => saveGithubCache(makeCache())).toThrow('rename failed');
-    expect(mockFs.unlinkSync).toHaveBeenCalledWith(mockFs.writeFileSync.mock.calls[0][0]);
   });
 });

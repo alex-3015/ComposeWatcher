@@ -16,7 +16,7 @@ const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
 function emptyCache(): GithubCacheData {
-  return { schemaVersion: 1, repositories: {}, rateLimit: null };
+  return { schemaVersion: 2, repositories: {}, rateLimit: null };
 }
 
 function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {

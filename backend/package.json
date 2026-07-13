@@ -1,9 +1,9 @@
 {
-  "name": "composewatcher-backend",
-  "version": "2.1.0",
+  "name": "@composewatcher/backend",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx --conditions=development watch src/index.ts",
     "build": "rimraf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc6 -p tsconfig.test.json",
     "start": "node dist/index.js",
@@ -16,7 +16,11 @@
     "format:fix": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
+    "@composewatcher/contracts": "3.0.0",
+    "@fastify/compress": "^9.0.0",
     "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.0",
+    "@fastify/static": "^10.1.0",
     "fastify": "^5.10.0",
     "js-yaml": "^5.2.1",
     "semver": "^7.8.5"

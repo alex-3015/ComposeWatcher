@@ -1,11 +1,11 @@
-import fs from 'fs';
 import path from 'path';
 import type { GithubRateLimit } from '../types.js';
 import { consoleServiceLogger, type ServiceLogger } from './serviceLogger.js';
+import { readJson, writeJsonAtomic } from './atomicJsonStore.js';
 
 const DATA_DIR = process.env.DATA_DIR ?? '/data';
 const CACHE_FILE = path.join(DATA_DIR, 'github-cache.json');
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export interface CachedGithubRelease {
   tagName: string;
@@ -26,17 +26,9 @@ export interface GithubRepositoryCacheEntry {
 }
 
 export interface GithubCacheData {
-  schemaVersion: 1;
+  schemaVersion: 2;
   repositories: Record<string, GithubRepositoryCacheEntry>;
   rateLimit: GithubRateLimit | null;
-}
-
-let dataDirEnsured = false;
-
-function ensureDataDir(): void {
-  if (dataDirEnsured) return;
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  dataDirEnsured = true;
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -103,11 +95,12 @@ export function emptyGithubCache(): GithubCacheData {
   return { schemaVersion: SCHEMA_VERSION, repositories: {}, rateLimit: null };
 }
 
-export function loadGithubCache(logger: ServiceLogger = consoleServiceLogger): GithubCacheData {
-  ensureDataDir();
-  if (!fs.existsSync(CACHE_FILE)) return emptyGithubCache();
+export async function loadGithubCache(
+  logger: ServiceLogger = consoleServiceLogger,
+): Promise<GithubCacheData> {
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
+    const parsed = await readJson(CACHE_FILE);
+    if (parsed === null) return emptyGithubCache();
     if (!isCacheData(parsed)) {
       logger.warn({}, 'GitHub cache file has invalid structure, ignoring');
       return emptyGithubCache();
@@ -119,22 +112,6 @@ export function loadGithubCache(logger: ServiceLogger = consoleServiceLogger): G
   }
 }
 
-export function saveGithubCache(cache: GithubCacheData): void {
-  ensureDataDir();
-  const tmpFile = `${CACHE_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(cache, null, 2));
-  try {
-    fs.renameSync(tmpFile, CACHE_FILE);
-  } catch (error) {
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch {
-      // Best-effort cleanup only.
-    }
-    throw error;
-  }
-}
-
-export function resetGithubCacheDirFlag(): void {
-  dataDirEnsured = false;
+export async function saveGithubCache(cache: GithubCacheData): Promise<void> {
+  await writeJsonAtomic(CACHE_FILE, cache);
 }

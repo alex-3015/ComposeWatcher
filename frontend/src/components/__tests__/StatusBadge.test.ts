@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
 import StatusBadge from '../StatusBadge.vue';
-import type { ContainerInfo } from '../../types';
+import type { ContainerStatus } from '../../types';
 
-type Status = ContainerInfo['status'];
+type Status = ContainerStatus;
 
 const cases: { status: Status; label: string; colorClass: string }[] = [
   { status: 'up-to-date', label: 'Up to date', colorClass: 'text-emerald-400' },

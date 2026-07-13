@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { ChevronDown, FolderOpen } from '@lucide/vue';
-import type { ContainerInfo } from '../types';
+import type { ContainerSummary } from '../types';
 import ContainerCard from './ContainerCard.vue';
 import ContainerRow from './ContainerRow.vue';
 import { UI } from '../theme';
 
 const props = defineProps<{
   composeFile: string;
-  containers: ContainerInfo[];
+  containers: ContainerSummary[];
   counts: { breaking: number; updates: number; total: number };
   expanded: boolean;
   viewMode: 'cards' | 'compact';
@@ -20,7 +20,8 @@ const groupId = computed(
 
 const emit = defineEmits<{
   toggle: [];
-  linkRepo: [container: ContainerInfo];
+  linkRepo: [container: ContainerSummary];
+  openDetail: [container: ContainerSummary];
 }>();
 </script>
 
@@ -67,6 +68,7 @@ const emit = defineEmits<{
         :key="c.id"
         :container="c"
         @link-repo="emit('linkRepo', $event)"
+        @open-detail="emit('openDetail', $event)"
       />
     </div>
     <div v-else-if="expanded" :id="groupId" class="space-y-2 mb-6">
@@ -75,6 +77,7 @@ const emit = defineEmits<{
         :key="c.id"
         :container="c"
         @link-repo="emit('linkRepo', $event)"
+        @open-detail="emit('openDetail', $event)"
       />
     </div>
   </div>
