@@ -10,6 +10,7 @@ RUN npm ci
 COPY contracts contracts
 COPY backend backend
 COPY frontend frontend
+COPY scripts scripts
 RUN npm run build
 
 FROM node:24-alpine AS app
