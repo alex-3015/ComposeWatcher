@@ -53,7 +53,7 @@ describe('StatCard', () => {
         textClass: 'text-blue-400',
       },
     });
-    const root = w.find('div');
+    const root = w.find('button');
     const classes = root.classes().join(' ');
     expect(classes).toContain('bg-blue-500/10');
     expect(classes).toContain('border-blue-500/20');

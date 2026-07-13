@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import type { ApiError, ContainerInfo, ContainersMeta } from './types.js';
+import type { ApiError, ContainerInfo, ContainersMeta, GithubRateLimit } from './types.js';
 import { scanDockerDir } from './services/dockerService.js';
 import { enrichWithGithubData } from './services/githubService.js';
 import { loadConfig, setRepoMapping } from './services/configService.js';
@@ -60,6 +60,23 @@ const checkIssueSchema = {
 
 const nullableStringSchema = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
 
+const githubRateLimitSchema = {
+  anyOf: [
+    { type: 'null' },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['limit', 'remaining', 'resetAt', 'observedAt'],
+      properties: {
+        limit: { type: 'number' },
+        remaining: { type: 'number' },
+        resetAt: { type: 'string' },
+        observedAt: { type: 'string' },
+      },
+    },
+  ],
+} as const;
+
 const containerSchema = {
   type: 'object',
   additionalProperties: false,
@@ -70,11 +87,15 @@ const containerSchema = {
     'currentVersion',
     'composeFile',
     'githubRepo',
-    'latestVersion',
+    'latestUpstreamVersion',
     'publishedAt',
     'status',
+    'updateKind',
+    'comparisonMode',
+    'historyComplete',
+    'releaseDataStale',
     'checkIssue',
-    'breakingChangeReason',
+    'breakingChanges',
     'releaseUrl',
     'releaseNotes',
     'releaseName',
@@ -87,14 +108,36 @@ const containerSchema = {
     currentVersion: { type: 'string' },
     composeFile: { type: 'string' },
     githubRepo: nullableStringSchema,
-    latestVersion: nullableStringSchema,
+    latestUpstreamVersion: nullableStringSchema,
     publishedAt: nullableStringSchema,
     status: {
       type: 'string',
-      enum: ['up-to-date', 'update-available', 'breaking-change', 'unknown', 'no-repo'],
+      enum: ['up-to-date', 'ahead', 'update-available', 'breaking-change', 'unknown', 'no-repo'],
     },
+    updateKind: {
+      anyOf: [
+        { type: 'null' },
+        { type: 'string', enum: ['major', 'minor', 'patch', 'prerelease'] },
+      ],
+    },
+    comparisonMode: { type: 'string', enum: ['exact', 'normalized', 'unverifiable'] },
+    historyComplete: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
+    releaseDataStale: { type: 'boolean' },
     checkIssue: checkIssueSchema,
-    breakingChangeReason: nullableStringSchema,
+    breakingChanges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['version', 'releaseName', 'reason', 'releaseUrl'],
+        properties: {
+          version: { type: 'string' },
+          releaseName: nullableStringSchema,
+          reason: { type: 'string' },
+          releaseUrl: { type: 'string' },
+        },
+      },
+    },
     releaseUrl: nullableStringSchema,
     releaseNotes: nullableStringSchema,
     releaseName: nullableStringSchema,
@@ -129,20 +172,23 @@ export async function buildApp(opts?: { logger?: boolean }) {
   let lastRefreshError: ApiError | null = null;
   let lastRefreshAttemptAt = 0;
   let skipDiskCache = false;
+  let lastGithubRateLimit: GithubRateLimit | null = null;
   const cacheTtlMs = parsePositiveInteger(process.env.CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
 
   async function refreshContainers(): Promise<ContainerInfo[]> {
     const config = loadConfig(app.log);
-    const scanned = scanDockerDir(app.log).map((container) => ({
+    const scanned = (await scanDockerDir(app.log)).map((container) => ({
       ...container,
       githubRepo: config.repoMappings[container.id] ?? container.githubRepo,
     }));
-    const enriched = await enrichWithGithubData(scanned, app.log);
+    const enrichment = await enrichWithGithubData(scanned, app.log);
+    const enriched = enrichment.containers;
+    lastGithubRateLimit = enrichment.githubRateLimit;
     const refreshedAt = Date.now();
     cache = { data: enriched, ts: refreshedAt };
     lastRefreshError = null;
     skipDiskCache = false;
-    saveCachedContainers(enriched);
+    saveCachedContainers(enriched, lastGithubRateLimit);
     void downloadIconsForContainers(enriched).catch((error: unknown) => {
       app.log.warn({ error }, 'Icon download failed');
     });
@@ -174,6 +220,7 @@ export async function buildApp(opts?: { logger?: boolean }) {
         refreshing: pendingRefresh !== null,
         refreshedAt: new Date(cache.ts).toISOString(),
         refreshError: lastRefreshError,
+        githubRateLimit: lastGithubRateLimit,
       },
     };
   }
@@ -186,7 +233,10 @@ export async function buildApp(opts?: { logger?: boolean }) {
 
     if (!cache && !skipDiskCache) {
       const diskData = loadCachedContainers(app.log);
-      if (diskData) cache = { data: diskData.containers, ts: diskData.ts };
+      if (diskData) {
+        cache = { data: diskData.containers, ts: diskData.ts };
+        lastGithubRateLimit = diskData.githubRateLimit;
+      }
     }
 
     if (cache) {
@@ -256,12 +306,13 @@ export async function buildApp(opts?: { logger?: boolean }) {
               meta: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['stale', 'refreshing', 'refreshedAt', 'refreshError'],
+                required: ['stale', 'refreshing', 'refreshedAt', 'refreshError', 'githubRateLimit'],
                 properties: {
                   stale: { type: 'boolean' },
                   refreshing: { type: 'boolean' },
                   refreshedAt: nullableStringSchema,
                   refreshError: { anyOf: [{ type: 'null' }, apiErrorSchema] },
+                  githubRateLimit: githubRateLimitSchema,
                 },
               },
             },
@@ -299,7 +350,7 @@ export async function buildApp(opts?: { logger?: boolean }) {
     },
     async (request, reply) => {
       const { id } = request.params;
-      const knownContainers = cache?.data ?? scanDockerDir(app.log);
+      const knownContainers = cache?.data ?? (await scanDockerDir(app.log));
       if (!knownContainers.some((container) => container.id === id)) {
         return reply.status(404).send(publicError('CONTAINER_NOT_FOUND', 'Container not found.'));
       }

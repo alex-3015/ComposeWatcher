@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContainerInfo } from '../types.js';
+import type { EnrichmentResult } from '../services/githubService.js';
 
 vi.mock('../services/dockerService.js', () => ({ scanDockerDir: vi.fn() }));
 vi.mock('../services/githubService.js', () => ({ enrichWithGithubData: vi.fn() }));
@@ -36,11 +37,15 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     currentVersion: '4.0.0',
     composeFile: 'docker-compose.yml',
     githubRepo: 'linuxserver/sonarr',
-    latestVersion: '4.0.0',
+    latestUpstreamVersion: '4.0.0',
     publishedAt: '2026-07-13T12:00:00.000Z',
     status: 'up-to-date',
+    updateKind: null,
+    comparisonMode: 'exact',
+    historyComplete: true,
+    releaseDataStale: false,
     checkIssue: null,
-    breakingChangeReason: null,
+    breakingChanges: [],
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
     releaseNotes: null,
     releaseName: null,
@@ -52,9 +57,12 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
 function setupMocks(): void {
   vi.resetAllMocks();
   mockLoadConfig.mockReturnValue({ repoMappings: {} });
-  mockScanDockerDir.mockReturnValue([makeContainer()]);
+  mockScanDockerDir.mockResolvedValue([makeContainer()]);
   mockLoadCachedContainers.mockReturnValue(null);
-  mockEnrichWithGithubData.mockImplementation(async (containers) => containers);
+  mockEnrichWithGithubData.mockImplementation(async (containers) => ({
+    containers,
+    githubRateLimit: null,
+  }));
   mockDownloadIcons.mockResolvedValue(undefined);
 }
 
@@ -81,6 +89,25 @@ describe('Compose Watcher API', () => {
     await app.close();
   });
 
+  it('keeps the health endpoint responsive while an asynchronous scan is pending', async () => {
+    let resolveScan!: (containers: ContainerInfo[]) => void;
+    mockScanDockerDir.mockReturnValue(
+      new Promise((resolve) => {
+        resolveScan = resolve;
+      }),
+    );
+    const app = await buildApp({ logger: false });
+    const containersRequest = app.inject({ method: 'GET', url: '/api/containers' });
+    await vi.waitFor(() => expect(mockScanDockerDir).toHaveBeenCalled());
+
+    const health = await app.inject({ method: 'GET', url: '/api/health' });
+
+    expect(health.statusCode).toBe(200);
+    resolveScan([makeContainer()]);
+    expect((await containersRequest).statusCode).toBe(200);
+    await app.close();
+  });
+
   it('returns containers in the v2 response envelope', async () => {
     const app = await buildApp({ logger: false });
     const response = await app.inject({ method: 'GET', url: '/api/containers' });
@@ -91,7 +118,7 @@ describe('Compose Watcher API', () => {
     expect(body.data[0].name).toBe('sonarr');
     expect(body.meta).toMatchObject({ stale: false, refreshing: false, refreshError: null });
     expect(body.meta.refreshedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(mockSaveCachedContainers).toHaveBeenCalledWith(body.data);
+    expect(mockSaveCachedContainers).toHaveBeenCalledWith(body.data, null);
     await app.close();
   });
 
@@ -112,9 +139,10 @@ describe('Compose Watcher API', () => {
 
   it('uses a fresh disk cache without triggering a scan', async () => {
     mockLoadCachedContainers.mockReturnValue({
-      schemaVersion: 2,
+      schemaVersion: 3,
       containers: [makeContainer({ name: 'cached' })],
       ts: Date.now(),
+      githubRateLimit: null,
     });
     const app = await buildApp({ logger: false });
     const response = await app.inject({ method: 'GET', url: '/api/containers' });
@@ -125,11 +153,12 @@ describe('Compose Watcher API', () => {
   });
 
   it('returns stale data immediately and starts background revalidation', async () => {
-    let resolveRefresh!: (containers: ContainerInfo[]) => void;
+    let resolveRefresh!: (result: EnrichmentResult) => void;
     mockLoadCachedContainers.mockReturnValue({
-      schemaVersion: 2,
+      schemaVersion: 3,
       containers: [makeContainer({ name: 'cached' })],
       ts: Date.now() - 10_000,
+      githubRateLimit: null,
     });
     mockEnrichWithGithubData.mockReturnValue(
       new Promise((resolve) => {
@@ -144,20 +173,19 @@ describe('Compose Watcher API', () => {
       meta: { stale: true, refreshing: true },
     });
     expect(mockScanDockerDir).toHaveBeenCalledTimes(1);
-    resolveRefresh([makeContainer()]);
+    resolveRefresh({ containers: [makeContainer()], githubRateLimit: null });
     await vi.waitFor(() => expect(mockSaveCachedContainers).toHaveBeenCalled());
     await app.close();
   });
 
   it('keeps stale data and exposes a background refresh failure without a retry loop', async () => {
     mockLoadCachedContainers.mockReturnValue({
-      schemaVersion: 2,
+      schemaVersion: 3,
       containers: [makeContainer({ name: 'cached' })],
       ts: Date.now() - 10_000,
+      githubRateLimit: null,
     });
-    mockScanDockerDir.mockImplementation(() => {
-      throw new Error('offline');
-    });
+    mockScanDockerDir.mockRejectedValue(new Error('offline'));
     const app = await buildApp({ logger: false });
     const first = await app.inject({ method: 'GET', url: '/api/containers' });
     expect(first.json().data[0].name).toBe('cached');
@@ -177,7 +205,7 @@ describe('Compose Watcher API', () => {
   });
 
   it('coalesces simultaneous forced refreshes', async () => {
-    let resolveRefresh!: (containers: ContainerInfo[]) => void;
+    let resolveRefresh!: (result: EnrichmentResult) => void;
     mockEnrichWithGithubData.mockReturnValue(
       new Promise((resolve) => {
         resolveRefresh = resolve;
@@ -187,7 +215,7 @@ describe('Compose Watcher API', () => {
     const first = app.inject({ method: 'GET', url: '/api/containers?refresh=true' });
     const second = app.inject({ method: 'GET', url: '/api/containers?refresh=true' });
     await vi.waitFor(() => expect(mockEnrichWithGithubData).toHaveBeenCalledTimes(1));
-    resolveRefresh([makeContainer()]);
+    resolveRefresh({ containers: [makeContainer()], githubRateLimit: null });
 
     expect((await first).statusCode).toBe(200);
     expect((await second).statusCode).toBe(200);
@@ -196,9 +224,7 @@ describe('Compose Watcher API', () => {
   });
 
   it('returns structured errors without leaking internal details', async () => {
-    mockScanDockerDir.mockImplementation(() => {
-      throw new Error('secret path /docker/private');
-    });
+    mockScanDockerDir.mockRejectedValue(new Error('secret path /docker/private'));
     const app = await buildApp({ logger: false });
     const response = await app.inject({ method: 'GET', url: '/api/containers' });
 

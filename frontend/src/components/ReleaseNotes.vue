@@ -14,7 +14,7 @@ const expanded = ref(false);
 const contentId = useId();
 
 const sanitizedHtml = computed(() => {
-  if (!props.releaseNotes) return '';
+  if (!expanded.value || !props.releaseNotes) return '';
   const raw = marked.parse(props.releaseNotes, { async: false }) as string;
   return DOMPurify.sanitize(raw);
 });
@@ -38,7 +38,7 @@ const sanitizedHtml = computed(() => {
       </span>
     </button>
     <div
-      v-show="expanded"
+      v-if="expanded"
       :id="contentId"
       class="release-notes-content px-3 py-3 text-sm leading-relaxed"
     >

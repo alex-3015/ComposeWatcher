@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { ContainerInfo } from '../types.js';
+import type { ContainerInfo, GithubRateLimit } from '../types.js';
 import { consoleServiceLogger, type ServiceLogger } from './serviceLogger.js';
 
 const DATA_DIR = process.env.DATA_DIR ?? '/data';
@@ -22,25 +22,28 @@ export function resetCacheDirFlag(): void {
 }
 
 export interface CachedData {
-  schemaVersion: 2;
+  schemaVersion: 3;
   containers: ContainerInfo[];
   ts: number;
+  githubRateLimit: GithubRateLimit | null;
 }
 
 function isValidCachedData(value: unknown): value is CachedData {
   if (typeof value !== 'object' || value === null) return false;
   const obj = value as Record<string, unknown>;
   return (
-    obj.schemaVersion === 2 &&
+    obj.schemaVersion === 3 &&
     Array.isArray(obj.containers) &&
     obj.containers.every(isValidContainer) &&
     typeof obj.ts === 'number' &&
-    Number.isFinite(obj.ts)
+    Number.isFinite(obj.ts) &&
+    isValidRateLimit(obj.githubRateLimit)
   );
 }
 
 const CONTAINER_STATUSES = new Set([
   'up-to-date',
+  'ahead',
   'update-available',
   'breaking-change',
   'unknown',
@@ -73,6 +76,31 @@ function isValidCheckIssue(value: unknown): boolean {
   );
 }
 
+function isValidRateLimit(value: unknown): value is GithubRateLimit | null {
+  if (value === null) return true;
+  if (typeof value !== 'object') return false;
+  const rateLimit = value as Record<string, unknown>;
+  return (
+    typeof rateLimit.limit === 'number' &&
+    Number.isFinite(rateLimit.limit) &&
+    typeof rateLimit.remaining === 'number' &&
+    Number.isFinite(rateLimit.remaining) &&
+    typeof rateLimit.resetAt === 'string' &&
+    typeof rateLimit.observedAt === 'string'
+  );
+}
+
+function isValidBreakingChange(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const change = value as Record<string, unknown>;
+  return (
+    typeof change.version === 'string' &&
+    isNullableString(change.releaseName) &&
+    typeof change.reason === 'string' &&
+    typeof change.releaseUrl === 'string'
+  );
+}
+
 function isValidContainer(value: unknown): value is ContainerInfo {
   if (typeof value !== 'object' || value === null) return false;
   const container = value as Record<string, unknown>;
@@ -83,12 +111,23 @@ function isValidContainer(value: unknown): value is ContainerInfo {
     typeof container.currentVersion === 'string' &&
     typeof container.composeFile === 'string' &&
     isNullableString(container.githubRepo) &&
-    isNullableString(container.latestVersion) &&
+    isNullableString(container.latestUpstreamVersion) &&
     isNullableString(container.publishedAt) &&
     typeof container.status === 'string' &&
     CONTAINER_STATUSES.has(container.status) &&
+    (container.updateKind === null ||
+      container.updateKind === 'major' ||
+      container.updateKind === 'minor' ||
+      container.updateKind === 'patch' ||
+      container.updateKind === 'prerelease') &&
+    (container.comparisonMode === 'exact' ||
+      container.comparisonMode === 'normalized' ||
+      container.comparisonMode === 'unverifiable') &&
+    (container.historyComplete === null || typeof container.historyComplete === 'boolean') &&
+    typeof container.releaseDataStale === 'boolean' &&
     isValidCheckIssue(container.checkIssue) &&
-    isNullableString(container.breakingChangeReason) &&
+    Array.isArray(container.breakingChanges) &&
+    container.breakingChanges.every(isValidBreakingChange) &&
     isNullableString(container.releaseUrl) &&
     isNullableString(container.releaseNotes) &&
     isNullableString(container.releaseName) &&
@@ -114,9 +153,12 @@ export function loadCachedContainers(
   }
 }
 
-export function saveCachedContainers(containers: ContainerInfo[]): void {
+export function saveCachedContainers(
+  containers: ContainerInfo[],
+  githubRateLimit: GithubRateLimit | null,
+): void {
   ensureDataDir();
-  const data: CachedData = { schemaVersion: 2, containers, ts: Date.now() };
+  const data: CachedData = { schemaVersion: 3, containers, ts: Date.now(), githubRateLimit };
   const tmpFile = `${CACHE_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
   try {

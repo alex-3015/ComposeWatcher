@@ -77,6 +77,17 @@ export const STATUS_THEME: Record<
     borderStrong: 'border-emerald-500/30',
     shadow: '',
   },
+  ahead: {
+    badgeLabel: 'Ahead',
+    text: 'text-violet-400',
+    textLight: 'text-violet-300',
+    bg: 'bg-violet-500/10',
+    bgBadge: 'bg-violet-500/15',
+    border: 'border-violet-500/20',
+    borderBadge: 'border-violet-500/30',
+    borderStrong: 'border-violet-500/30',
+    shadow: '',
+  },
   unknown: {
     badgeLabel: 'Unknown',
     text: 'text-gray-400',

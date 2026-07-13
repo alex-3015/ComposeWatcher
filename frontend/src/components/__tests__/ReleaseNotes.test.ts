@@ -38,9 +38,7 @@ describe('ReleaseNotes – expand/collapse', () => {
       global: { stubs },
     });
     const content = w.find('.release-notes-content');
-    expect(content.exists()).toBe(true);
-    // v-show sets display:none
-    expect(content.attributes('style')).toContain('display: none');
+    expect(content.exists()).toBe(false);
   });
 
   it('expands content on button click', async () => {
@@ -59,12 +57,10 @@ describe('ReleaseNotes – expand/collapse', () => {
       global: { stubs },
     });
     await w.find('button').trigger('click');
-    expect(w.find('.release-notes-content').attributes('style') ?? '').not.toContain(
-      'display: none',
-    );
+    expect(w.find('.release-notes-content').exists()).toBe(true);
 
     await w.find('button').trigger('click');
-    expect(w.find('.release-notes-content').attributes('style')).toContain('display: none');
+    expect(w.find('.release-notes-content').exists()).toBe(false);
   });
 });
 

@@ -62,6 +62,7 @@ describe('UI constants', () => {
 describe('STATUS_THEME', () => {
   const allStatuses: StatusKey[] = [
     'up-to-date',
+    'ahead',
     'update-available',
     'breaking-change',
     'unknown',
@@ -73,14 +74,14 @@ describe('STATUS_THEME', () => {
     expect(typeof STATUS_THEME).toBe('object');
   });
 
-  it('has entries for all 5 status types', () => {
+  it('has entries for all 6 status types', () => {
     for (const status of allStatuses) {
       expect(STATUS_THEME).toHaveProperty(status);
     }
   });
 
-  it('has exactly 5 entries (no extra statuses)', () => {
-    expect(Object.keys(STATUS_THEME)).toHaveLength(5);
+  it('has exactly 6 entries (one per status)', () => {
+    expect(Object.keys(STATUS_THEME)).toHaveLength(6);
   });
 
   const requiredProperties = [

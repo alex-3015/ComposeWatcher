@@ -7,7 +7,7 @@ import { consoleServiceLogger, type ServiceLogger } from './serviceLogger.js';
 const DOCKER_DIR = process.env.DOCKER_DIR ?? '/docker';
 
 interface ComposeService {
-  image?: string;
+  image?: unknown;
 }
 
 interface ComposeFile {
@@ -101,28 +101,46 @@ const COMPOSE_FILENAMES = new Set([
   'compose.yaml',
 ]);
 
-function findComposeFiles(dir: string): string[] {
+async function findComposeFiles(dir: string, logger: ServiceLogger): Promise<string[]> {
   const results: string[] = [];
   if (!fs.existsSync(dir)) return results;
 
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...findComposeFiles(fullPath));
-    } else if (entry.isFile() && COMPOSE_FILENAMES.has(entry.name)) {
-      results.push(fullPath);
+  const pending = [dir];
+  while (pending.length > 0) {
+    const currentDir = pending.pop();
+    if (!currentDir) break;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+    } catch (error) {
+      logger.warn({ directory: currentDir, error }, 'Skipping unreadable directory');
+      continue;
+    }
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) pending.push(fullPath);
+      else if (entry.isFile() && COMPOSE_FILENAMES.has(entry.name)) results.push(fullPath);
     }
   }
-  return results;
+  return results.sort((left, right) => left.localeCompare(right));
 }
 
-export function scanDockerDir(logger: ServiceLogger = consoleServiceLogger): ContainerInfo[] {
-  const composeFiles = findComposeFiles(DOCKER_DIR);
+export async function scanDockerDir(
+  logger: ServiceLogger = consoleServiceLogger,
+): Promise<ContainerInfo[]> {
+  let composeFiles: string[];
+  try {
+    composeFiles = await findComposeFiles(DOCKER_DIR, logger);
+  } catch (error) {
+    logger.warn({ directory: DOCKER_DIR, error }, 'Unable to scan Docker directory');
+    return [];
+  }
   const containers: ContainerInfo[] = [];
 
   for (const filePath of composeFiles) {
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = loadYaml(content);
 
       if (parsed == null || typeof parsed !== 'object') {
@@ -139,8 +157,10 @@ export function scanDockerDir(logger: ServiceLogger = consoleServiceLogger): Con
 
       const relPath = path.relative(DOCKER_DIR, filePath);
 
-      for (const [serviceName, service] of Object.entries(compose.services)) {
-        if (!service?.image) continue;
+      for (const [serviceName, service] of Object.entries(compose.services).sort(
+        ([left], [right]) => left.localeCompare(right),
+      )) {
+        if (typeof service?.image !== 'string' || service.image.trim().length === 0) continue;
 
         const { image, version } = parseImageVersion(service.image);
         const id = `${relPath}::${serviceName}`;
@@ -152,11 +172,15 @@ export function scanDockerDir(logger: ServiceLogger = consoleServiceLogger): Con
           currentVersion: version,
           composeFile: relPath,
           githubRepo: inferGithubRepo(image),
-          latestVersion: null,
+          latestUpstreamVersion: null,
           publishedAt: null,
           status: 'unknown',
+          updateKind: null,
+          comparisonMode: 'unverifiable',
+          historyComplete: null,
+          releaseDataStale: false,
           checkIssue: null,
-          breakingChangeReason: null,
+          breakingChanges: [],
           releaseUrl: null,
           releaseNotes: null,
           releaseName: null,

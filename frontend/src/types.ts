@@ -1,5 +1,9 @@
 export type ContainerStatus =
-  'up-to-date' | 'update-available' | 'breaking-change' | 'unknown' | 'no-repo';
+  'up-to-date' | 'ahead' | 'update-available' | 'breaking-change' | 'unknown' | 'no-repo';
+
+export type UpdateKind = 'major' | 'minor' | 'patch' | 'prerelease' | null;
+
+export type ComparisonMode = 'exact' | 'normalized' | 'unverifiable';
 
 export type CheckIssueCode =
   | 'repo-not-found'
@@ -21,6 +25,20 @@ export interface ApiError {
   message: string;
 }
 
+export interface BreakingChange {
+  version: string;
+  releaseName: string | null;
+  reason: string;
+  releaseUrl: string;
+}
+
+export interface GithubRateLimit {
+  limit: number;
+  remaining: number;
+  resetAt: string;
+  observedAt: string;
+}
+
 export interface ContainerInfo {
   id: string;
   name: string;
@@ -28,11 +46,15 @@ export interface ContainerInfo {
   currentVersion: string;
   composeFile: string;
   githubRepo: string | null;
-  latestVersion: string | null;
+  latestUpstreamVersion: string | null;
   publishedAt: string | null;
   status: ContainerStatus;
+  updateKind: UpdateKind;
+  comparisonMode: ComparisonMode;
+  historyComplete: boolean | null;
+  releaseDataStale: boolean;
   checkIssue: CheckIssue | null;
-  breakingChangeReason: string | null;
+  breakingChanges: BreakingChange[];
   releaseUrl: string | null;
   releaseNotes: string | null;
   releaseName: string | null;
@@ -44,6 +66,7 @@ export interface ContainersMeta {
   refreshing: boolean;
   refreshedAt: string | null;
   refreshError: ApiError | null;
+  githubRateLimit: GithubRateLimit | null;
 }
 
 export interface ContainersResponse {

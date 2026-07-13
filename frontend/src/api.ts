@@ -41,11 +41,18 @@ function isContainersResponse(value: unknown): value is ContainersResponse {
     return false;
   }
   const meta = response.meta as Record<string, unknown>;
+  const rateLimit = meta.githubRateLimit as Record<string, unknown> | null;
   return (
     typeof meta.stale === 'boolean' &&
     typeof meta.refreshing === 'boolean' &&
     (typeof meta.refreshedAt === 'string' || meta.refreshedAt === null) &&
-    (meta.refreshError === null || isErrorResponse({ error: meta.refreshError }))
+    (meta.refreshError === null || isErrorResponse({ error: meta.refreshError })) &&
+    (rateLimit === null ||
+      (typeof rateLimit === 'object' &&
+        typeof rateLimit.limit === 'number' &&
+        typeof rateLimit.remaining === 'number' &&
+        typeof rateLimit.resetAt === 'string' &&
+        typeof rateLimit.observedAt === 'string'))
   );
 }
 

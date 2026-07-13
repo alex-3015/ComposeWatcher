@@ -7,7 +7,10 @@ import type { ContainersMeta, ContainerInfo } from '../types';
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
@@ -18,11 +21,15 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     currentVersion: '4.0.0',
     composeFile: 'docker-compose.yml',
     githubRepo: 'linuxserver/sonarr',
-    latestVersion: '4.0.0',
+    latestUpstreamVersion: '4.0.0',
     publishedAt: '2024-01-01T00:00:00Z',
     status: 'up-to-date',
+    updateKind: null,
+    comparisonMode: 'exact',
+    historyComplete: true,
+    releaseDataStale: false,
     checkIssue: null,
-    breakingChangeReason: null,
+    breakingChanges: [],
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
     releaseNotes: null,
     releaseName: null,
@@ -47,6 +54,7 @@ function mockContainersResponse(containers: ContainerInfo[], meta: Partial<Conta
           refreshing: false,
           refreshedAt: '2026-07-13T14:00:00.000Z',
           refreshError: null,
+          githubRateLimit: null,
           ...meta,
         },
       }),
@@ -82,6 +90,9 @@ const globalStubs = {
     'Search',
     'ChevronDown',
     'FolderOpen',
+    'TrendingUp',
+    'LayoutGrid',
+    'List',
   ],
 };
 
@@ -214,6 +225,25 @@ describe('App – stat cards', () => {
     fetchMock.mockReturnValueOnce(new Promise(() => {}));
     const w = mount(App, { global: globalStubs });
     expect(w.text()).not.toContain('Breaking');
+  });
+
+  it('uses every status card as a toggleable filter', async () => {
+    mockContainersResponse([
+      makeContainer({ id: 'a', name: 'ahead-app', status: 'ahead' }),
+      makeContainer({ id: 'b', name: 'unknown-app', status: 'unknown' }),
+      makeContainer({ id: 'c', name: 'unlinked-app', status: 'no-repo' }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    for (const label of ['Ahead', 'Unknown', 'No repo']) {
+      const card = w.findAll('button.rounded-xl').find((button) => button.text().includes(label))!;
+      await card.trigger('click');
+      expect(card.attributes('aria-pressed')).toBe('true');
+      await card.trigger('click');
+      expect(card.attributes('aria-pressed')).toBe('false');
+    }
+    w.unmount();
   });
 });
 
@@ -560,7 +590,7 @@ describe('App – refresh metadata and diagnostics', () => {
 // Sort order
 // ────────────────────────────────────────────────────────────────────────────
 describe('App – card sort order', () => {
-  it('renders containers sorted: breaking → updates → up-to-date → no-repo → unknown', async () => {
+  it('renders containers in priority order', async () => {
     // Provide in reverse order to verify sorting is applied
     mockContainersResponse([
       makeContainer({ id: 'e', name: 'mystery', status: 'unknown' }),
@@ -582,9 +612,9 @@ describe('App – card sort order', () => {
     };
 
     expect(positions.breaker).toBeLessThan(positions.updater);
-    expect(positions.updater).toBeLessThan(positions.current);
-    expect(positions.current).toBeLessThan(positions.norepo);
-    expect(positions.norepo).toBeLessThan(positions.mystery);
+    expect(positions.updater).toBeLessThan(positions.mystery);
+    expect(positions.mystery).toBeLessThan(positions.norepo);
+    expect(positions.norepo).toBeLessThan(positions.current);
   });
 
   it('sort order is preserved when a status filter is active', async () => {
@@ -622,6 +652,68 @@ describe('App – card sort order', () => {
     await allBtn!.trigger('click');
     expect(w.text()).toContain('breaker');
     expect(w.text()).toContain('current');
+  });
+});
+
+describe('App – dashboard preferences and views', () => {
+  it('switches to compact view and persists the choice', async () => {
+    mockContainersResponse([makeContainer()]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    await w.get('button[aria-label="Compact view"]').trigger('click');
+
+    expect(w.find('button[aria-label^="Show details for sonarr"]').exists()).toBe(true);
+    expect(JSON.parse(localStorage.getItem('compose-watcher:dashboard:v1') ?? '{}')).toMatchObject({
+      viewMode: 'compact',
+    });
+    w.unmount();
+  });
+
+  it('sorts containers alphabetically when Name is selected', async () => {
+    mockContainersResponse([
+      makeContainer({ id: 'z', name: 'zulu' }),
+      makeContainer({ id: 'a', name: 'alpha' }),
+    ]);
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    await w.get('#container-sort').setValue('name');
+
+    expect(w.text().indexOf('alpha')).toBeLessThan(w.text().indexOf('zulu'));
+    w.unmount();
+  });
+
+  it('falls back safely when stored preferences are invalid', async () => {
+    localStorage.setItem('compose-watcher:dashboard:v1', '{invalid');
+    mockContainersResponse([makeContainer()]);
+
+    const w = mount(App, { global: globalStubs });
+    await flushPromises();
+
+    expect(w.text()).toContain('sonarr');
+    expect(w.get('button[aria-label="Card view"]').attributes('aria-pressed')).toBe('true');
+    w.unmount();
+  });
+
+  it('refreshes automatically every five minutes while visible', async () => {
+    vi.useFakeTimers();
+    try {
+      mockContainersResponse([makeContainer()]);
+      mockContainersResponse([makeContainer({ currentVersion: '4.0.1' })]);
+      const w = mount(App, { global: globalStubs });
+      await flushPromises();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await flushPromises();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1][0]).toBe('/api/containers');
+      w.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

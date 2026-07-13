@@ -11,11 +11,15 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     currentVersion: '4.0.0',
     composeFile: 'docker-compose.yml',
     githubRepo: 'linuxserver/sonarr',
-    latestVersion: '4.0.0',
+    latestUpstreamVersion: '4.0.0',
     publishedAt: '2024-01-01T00:00:00Z',
     status: 'up-to-date',
+    updateKind: null,
+    comparisonMode: 'exact',
+    historyComplete: true,
+    releaseDataStale: false,
     checkIssue: null,
-    breakingChangeReason: null,
+    breakingChanges: [],
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
     releaseNotes: null,
     releaseName: null,
@@ -41,6 +45,7 @@ const defaultProps = {
   ],
   counts: { breaking: 0, updates: 0, total: 2 },
   expanded: true,
+  viewMode: 'cards' as const,
 };
 
 describe('ComposeGroup – rendering', () => {
@@ -112,6 +117,24 @@ describe('ComposeGroup – toggle', () => {
     const w = mount(ComposeGroup, { props: defaultProps, global: { stubs } });
     expect(w.text()).toContain('sonarr');
     expect(w.text()).toContain('radarr');
+  });
+
+  it('does not render container cards while collapsed', () => {
+    const w = mount(ComposeGroup, {
+      props: { ...defaultProps, expanded: false },
+      global: { stubs },
+    });
+
+    expect(w.find('[aria-label="Edit GitHub repository for sonarr"]').exists()).toBe(false);
+  });
+
+  it('renders expandable rows in compact view', () => {
+    const w = mount(ComposeGroup, {
+      props: { ...defaultProps, viewMode: 'compact' },
+      global: { stubs },
+    });
+
+    expect(w.find('button[aria-label="Show details for sonarr"]').exists()).toBe(true);
   });
 });
 

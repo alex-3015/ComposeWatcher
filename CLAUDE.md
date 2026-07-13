@@ -22,7 +22,7 @@ npm run test       # vitest run (single pass)
 npm run test:watch # vitest watch mode
 ```
 
-`dev:mock` activates `mock-plugin.ts` which intercepts all `/api/*` requests in the Vite dev server and returns data from `src/mocks/data.ts`. The mock state is mutable within a session — linking/unlinking a repo via the UI persists until the dev server restarts. Mock data covers all 5 status types: `up-to-date`, `update-available`, `breaking-change`, `unknown`, `no-repo`.
+`dev:mock` activates `mock-plugin.ts` which intercepts all `/api/*` requests in the Vite dev server and returns data from `src/mocks/data.ts`. The mock state is mutable within a session — linking/unlinking a repo via the UI persists until the dev server restarts. Mock data covers the dashboard status and diagnostic states.
 
 ### Run a single test file
 ```bash
@@ -43,26 +43,27 @@ docker compose up --build   # builds both images, runs on host port 8555
 The app is a **single docker-compose service** that bundles both a Node.js backend and an nginx-served Vue SPA. nginx serves the frontend on port 80 (exposed as 8555) and reverse-proxies `/api/` to the backend on port 3000.
 
 ### Data flow
-1. On startup (or cache miss), `scanDockerDir` recursively finds all `docker-compose.{yml,yaml}` / `compose.{yml,yaml}` files under `DOCKER_DIR`.
+1. On startup (or cache miss), asynchronous `scanDockerDir` recursively finds all `docker-compose.{yml,yaml}` / `compose.{yml,yaml}` files under `DOCKER_DIR` in deterministic order.
 2. For each service with an `image:` field, it parses the image name and infers a GitHub `owner/repo` via `inferGithubRepo` (known-mapping table + heuristics).
 3. Manual overrides from `DATA_DIR/config.json` (`repoMappings`) replace auto-inferred repos.
-4. `enrichWithGithubData` deduplicates repositories and calls `GET /repos/{owner}/{repo}/releases/latest` with bounded concurrency, then fills in release data, status, and structured check diagnostics.
-5. Results use a versioned memory/disk stale-while-revalidate cache; `?refresh=true` waits for a fresh result.
+4. `enrichWithGithubData` deduplicates repositories and calls `GET /repos/{owner}/{repo}/releases?per_page=100` with bounded concurrency and conditional ETag headers.
+5. Stable/prerelease channels and normalized packaging suffixes are compared separately; all newer releases in the available history contribute breaking-change signals.
+6. Results use versioned memory/disk stale-while-revalidate caches; `/data/github-cache.json` preserves compact release summaries and ETags, and `?refresh=true` waits for revalidation unless rate-limit backoff is active.
 
 ### Container ID format
 `"<relative-compose-path>::<service-name>"` — e.g. `"sonarr/docker-compose.yml::sonarr"`. IDs are URL-encoded when used in the `POST /api/containers/:id/repo` route.
 
 ### Status values
-`up-to-date` | `update-available` | `breaking-change` | `unknown` | `no-repo`
+`up-to-date` | `ahead` | `update-available` | `breaking-change` | `unknown` | `no-repo`
 
 Ambiguous tags (`latest`, digests, Compose variables, or unequal non-semver values) remain `unknown` and include `checkIssue.code = "unverifiable-version"`.
 
-Breaking change is flagged when: (a) major semver bump, or (b) release notes contain keywords from `BREAKING_KEYWORDS` array in `githubService.ts`.
+Breaking changes are reported as a list when: (a) a major version bump exists, or (b) a newer release contains an explicit breaking or migration phrase. `historyComplete` indicates whether the 100-release window reached the current version.
 
 ### Types
 `backend/src/types.ts` is the source of truth for `ContainerInfo`, `Config`, and `GithubRelease`. The frontend has a mirror at `frontend/src/types.ts` — keep them in sync manually.
 
-API success responses use `{ data }`; `GET /api/containers` additionally returns `{ meta: { stale, refreshing, refreshedAt, refreshError } }`. Errors use `{ error: { code, message } }`.
+API success responses use `{ data }`; `GET /api/containers` additionally returns `{ meta: { stale, refreshing, refreshedAt, refreshError, githubRateLimit } }`. Errors use `{ error: { code, message } }`.
 
 ### Test environments
 - Backend tests: `vitest` with `environment: 'node'` (config in `backend/vitest.config.ts`)

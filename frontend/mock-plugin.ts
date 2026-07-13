@@ -62,6 +62,12 @@ export function mockApiPlugin(): Plugin {
               refreshing: false,
               refreshedAt: new Date().toISOString(),
               refreshError: null,
+              githubRateLimit: {
+                limit: 5000,
+                remaining: 4988,
+                resetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+                observedAt: new Date().toISOString(),
+              },
             },
           });
         }

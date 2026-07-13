@@ -9,12 +9,15 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 ## Features
 
 - Automatically scans a directory of Docker Compose files for container images
-- Compares current image tags against latest GitHub releases using semantic versioning
-- Detects **breaking changes** (major version bumps, keywords like "breaking change", "migration required" in release notes)
-- Filter containers by status: up-to-date, update available, breaking change, unknown
+- Compares image tags against up to 100 GitHub releases while preserving stable/prerelease channels
+- Normalizes common packaging suffixes such as `-alpine`, `-ls40`, and `-r1` without inventing Docker tags
+- Detects **breaking changes** across intermediate releases (major bumps and explicit migration warnings)
+- Filter and sort containers, switch between card and compact views, and keep dashboard preferences locally
+- Automatically refreshes visible dashboards every five minutes
 - Persistent repository mappings stored in a JSON config file
 - Deduplicated, concurrency-limited GitHub checks for fast refreshes on larger installations
 - Stale-while-revalidate caching that keeps the dashboard responsive during background checks
+- Persistent per-repository ETag caching with rate-limit backoff and stale-on-error fallback
 - Actionable diagnostics for rate limits, network failures, invalid releases, and unverifiable tags
 
 ![screenshot.png](screenshot/screenshot.png)
@@ -24,9 +27,10 @@ A self-hosted web dashboard that scans your Docker Compose files, compares runni
 | Status | Description |
 |---|---|
 | `up-to-date` | Current tag matches latest release |
+| `ahead` | Current normalized image version is newer than the latest matching upstream release |
 | `update-available` | Newer release exists (minor/patch) |
 | `breaking-change` | Major version bump or breaking change detected in release notes |
-| `unknown` | Could not determine status (e.g. `latest`, digests, variables, non-comparable tags, or a failed GitHub check) |
+| `unknown` | Could not determine status (e.g. `latest`, digests, variables, non-comparable tags, or a failed GitHub check without cached data) |
 | `no-repo` | No GitHub repository linked yet |
 
 ## Getting Started
@@ -101,7 +105,13 @@ All successful endpoints use a `{ "data": ... }` envelope. Container responses a
     "stale": false,
     "refreshing": false,
     "refreshedAt": "2026-07-13T14:00:00.000Z",
-    "refreshError": null
+    "refreshError": null,
+    "githubRateLimit": {
+      "limit": 5000,
+      "remaining": 4988,
+      "resetAt": "2026-07-13T15:00:00.000Z",
+      "observedAt": "2026-07-13T14:00:00.000Z"
+    }
   }
 }
 ```
@@ -129,14 +139,19 @@ Errors are stable, machine-readable objects:
 
 1. The backend scans all `docker-compose*.yml` files in the configured `DOCKER_DIR`
 2. For each container image, it attempts to infer the GitHub repository from the image name
-3. Linked repositories are deduplicated and checked through a bounded parallel worker pool
-4. Comparable semantic versions are evaluated; ambiguous tags remain `unknown` instead of producing false update alerts
-5. Release notes are scanned for breaking change indicators
-6. Fresh results are cached in memory and on disk; expired results are served immediately while revalidation runs in the background
+3. Linked repositories are deduplicated and up to 100 published releases are fetched through a bounded worker pool
+4. ETags revalidate the persistent per-repository cache, while GitHub backoff headers prevent premature retries
+5. Stable and prerelease channels are evaluated separately; common packaging suffixes compare against the upstream version core
+6. All newer releases in the available history are scanned for explicit breaking-change indicators
+7. Fresh results are cached in memory and on disk; expired or temporarily unavailable data is served with visible freshness diagnostics
 
 ## Persistent Storage
 
-Repository mappings are stored in a Docker volume at `/data/config.json`. This persists across container restarts. Config writes are atomic (write to tmp file + rename) to prevent corruption on unexpected shutdowns. The separate result cache is versioned and is rebuilt automatically when an incompatible format is found.
+Repository mappings are stored in a Docker volume at `/data/config.json`. This persists across container restarts. Config writes are atomic (write to tmp file + rename) to prevent corruption on unexpected shutdowns. Container results live in `/data/cache.json`; compact release summaries and ETags live in `/data/github-cache.json`. Both caches are versioned and rebuilt automatically when an incompatible format is found.
+
+## Update Semantics
+
+Compose Watcher deliberately uses GitHub Releases as its upstream source. A reported upstream update does **not** guarantee that a container registry already provides a matching image tag. The UI therefore keeps the configured image tag and the latest upstream release clearly separated. Tags such as `latest`, digests, Compose variables, and unparseable versions remain `unknown` rather than producing speculative alerts.
 
 ## Container Security
 

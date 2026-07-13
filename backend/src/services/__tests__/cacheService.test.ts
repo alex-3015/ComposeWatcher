@@ -40,11 +40,15 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     currentVersion: '4.0.0',
     composeFile: 'docker-compose.yml',
     githubRepo: 'linuxserver/sonarr',
-    latestVersion: '4.0.0',
+    latestUpstreamVersion: '4.0.0',
     publishedAt: '2024-01-01T00:00:00Z',
     status: 'up-to-date',
+    updateKind: null,
+    comparisonMode: 'exact',
+    historyComplete: true,
+    releaseDataStale: false,
     checkIssue: null,
-    breakingChangeReason: null,
+    breakingChanges: [],
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.0.0',
     releaseNotes: null,
     releaseName: null,
@@ -63,7 +67,12 @@ beforeEach(() => {
 // ────────────────────────────────────────────────────────────────────────────
 describe('loadCachedContainers', () => {
   it('returns parsed data when cache file exists and is valid', () => {
-    const cached = { schemaVersion: 2 as const, containers: [makeContainer()], ts: 1700000000000 };
+    const cached = {
+      schemaVersion: 3 as const,
+      containers: [makeContainer()],
+      ts: 1700000000000,
+      githubRateLimit: null,
+    };
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockReturnValue(JSON.stringify(cached));
 
@@ -123,13 +132,14 @@ describe('loadCachedContainers', () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockReturnValue(
       JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         containers: [
           makeContainer({
             checkIssue: { code: 'network', message: 'Network error', retryAt: null },
           }),
         ],
         ts: 123,
+        githubRateLimit: null,
       }).replace('network', 'unsupported'),
     );
 
@@ -199,7 +209,7 @@ describe('loadCachedContainers', () => {
 describe('saveCachedContainers', () => {
   it('writes to a tmp file then renames to the final path', () => {
     mockFs.existsSync.mockReturnValue(true);
-    saveCachedContainers([makeContainer()]);
+    saveCachedContainers([makeContainer()], null);
 
     const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
     expect(writtenPath).toMatch(TMP_FILE_PATTERN);
@@ -209,7 +219,7 @@ describe('saveCachedContainers', () => {
   it('includes containers array and ts in the written data', () => {
     mockFs.existsSync.mockReturnValue(true);
     const containers = [makeContainer()];
-    saveCachedContainers(containers);
+    saveCachedContainers(containers, null);
 
     const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
     expect(written.containers).toEqual(containers);
@@ -223,13 +233,13 @@ describe('saveCachedContainers', () => {
     mockFs.writeFileSync.mockImplementation(() => callOrder.push('write'));
     mockFs.renameSync.mockImplementation(() => callOrder.push('rename'));
 
-    saveCachedContainers([]);
+    saveCachedContainers([], null);
     expect(callOrder).toEqual(['write', 'rename']);
   });
 
   it('creates DATA_DIR if it does not exist', () => {
     mockFs.existsSync.mockReturnValue(false);
-    saveCachedContainers([]);
+    saveCachedContainers([], null);
     expect(mockFs.mkdirSync).toHaveBeenCalledWith(DATA_DIR, { recursive: true });
   });
 
@@ -239,7 +249,7 @@ describe('saveCachedContainers', () => {
       throw new Error('Rename failed');
     });
 
-    expect(() => saveCachedContainers([])).toThrow('Rename failed');
+    expect(() => saveCachedContainers([], null)).toThrow('Rename failed');
     const writtenPath = mockFs.writeFileSync.mock.calls[0][0] as string;
     expect(mockFs.unlinkSync).toHaveBeenCalledWith(writtenPath);
   });
@@ -253,7 +263,7 @@ describe('saveCachedContainers', () => {
       throw new Error('Cleanup failed');
     });
 
-    expect(() => saveCachedContainers([])).toThrow('Rename failed');
+    expect(() => saveCachedContainers([], null)).toThrow('Rename failed');
   });
 
   it('propagates error when writeFileSync throws', () => {
@@ -261,7 +271,7 @@ describe('saveCachedContainers', () => {
     mockFs.writeFileSync.mockImplementation(() => {
       throw new Error('Disk full');
     });
-    expect(() => saveCachedContainers([])).toThrow('Disk full');
+    expect(() => saveCachedContainers([], null)).toThrow('Disk full');
   });
 });
 
@@ -307,7 +317,7 @@ describe('round-trip', () => {
     mockFs.writeFileSync.mockImplementation((_p: string, data: string) => {
       writtenData = data;
     });
-    saveCachedContainers(containers);
+    saveCachedContainers(containers, null);
 
     mockFs.readFileSync.mockReturnValue(writtenData);
     const loaded = loadCachedContainers();

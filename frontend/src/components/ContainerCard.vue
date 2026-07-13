@@ -6,6 +6,7 @@ import StatusBadge from './StatusBadge.vue';
 import ReleaseNotes from './ReleaseNotes.vue';
 import { STATUS_THEME, UI } from '../theme';
 import { getContainerIconUrl } from '../iconMap';
+import { formatExactDate, formatRelativeTime } from '../format';
 
 const props = defineProps<{
   container: ContainerInfo;
@@ -29,17 +30,6 @@ const cardClass = computed(() => {
   if (hasUpdate.value) return STATUS_THEME['update-available'].borderStrong;
   return `${UI.borderDefault} hover:border-gray-700`;
 });
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
 </script>
 
 <template>
@@ -68,7 +58,7 @@ function formatDate(iso: string | null): string {
     <!-- Version info -->
     <div class="grid grid-cols-2 gap-3">
       <div :class="`${UI.versionBoxBg} rounded-lg px-3 py-2 min-w-0`">
-        <p :class="`${UI.textMuted} text-xs mb-0.5`">Current</p>
+        <p :class="`${UI.textMuted} text-xs mb-0.5`">Image tag</p>
         <p :class="`${UI.textPrimary} font-mono text-sm truncate`">
           {{ container.currentVersion }}
         </p>
@@ -76,29 +66,70 @@ function formatDate(iso: string | null): string {
       <div
         :class="`rounded-lg px-3 py-2 min-w-0 ${hasUpdate ? STATUS_THEME['update-available'].bg : UI.versionBoxBg}`"
       >
-        <p :class="`${UI.textMuted} text-xs mb-0.5`">Latest</p>
+        <p :class="`${UI.textMuted} text-xs mb-0.5`">Upstream release</p>
         <p
           :class="`font-mono text-sm truncate ${hasUpdate ? STATUS_THEME['update-available'].textLight : UI.textPrimary}`"
         >
-          {{ container.latestVersion ?? '—' }}
+          {{ container.latestUpstreamVersion ?? '—' }}
         </p>
       </div>
     </div>
 
+    <div class="flex flex-wrap gap-1.5 -mt-2">
+      <span
+        v-if="container.comparisonMode === 'normalized'"
+        :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-full px-2 py-0.5 text-[11px] ${UI.textSecondary}`"
+      >
+        Normalized upstream comparison
+      </span>
+      <span
+        v-if="container.updateKind"
+        :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-full px-2 py-0.5 text-[11px] ${UI.textSecondary}`"
+      >
+        {{ container.updateKind }} update
+      </span>
+    </div>
+
     <!-- Breaking change warning -->
     <div
-      v-if="container.status === 'breaking-change' && container.breakingChangeReason"
-      :class="`flex items-start gap-2 ${STATUS_THEME['breaking-change'].bg} border ${STATUS_THEME['breaking-change'].border} rounded-lg px-3 py-2.5`"
+      v-if="container.breakingChanges.length > 0"
+      :class="`${STATUS_THEME['breaking-change'].bg} border ${STATUS_THEME['breaking-change'].border} rounded-lg px-3 py-2.5`"
     >
-      <AlertTriangle
-        :size="14"
-        :class="`${STATUS_THEME['breaking-change'].text} shrink-0 mt-0.5`"
-      />
-      <p
-        :class="`${STATUS_THEME['breaking-change'].textLight} text-xs leading-relaxed break-words min-w-0`"
+      <div
+        v-for="change in container.breakingChanges"
+        :key="`${change.version}:${change.reason}`"
+        class="flex items-start gap-2 [&:not(:last-child)]:mb-2"
       >
-        {{ container.breakingChangeReason }}
-      </p>
+        <AlertTriangle
+          :size="14"
+          :class="`${STATUS_THEME['breaking-change'].text} shrink-0 mt-0.5`"
+          aria-hidden="true"
+        />
+        <p
+          :class="`${STATUS_THEME['breaking-change'].textLight} text-xs leading-relaxed break-words min-w-0`"
+        >
+          <a :href="change.releaseUrl" target="_blank" rel="noopener noreferrer" class="underline">
+            {{ change.version }}
+          </a>
+          — {{ change.reason }}
+        </p>
+      </div>
+    </div>
+
+    <div
+      v-if="container.historyComplete === false"
+      :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-lg px-3 py-2 text-xs ${UI.textSecondary}`"
+      role="status"
+    >
+      Breaking-change history may be incomplete because more than 100 releases are available.
+    </div>
+
+    <div
+      v-if="container.releaseDataStale"
+      class="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+      role="status"
+    >
+      Showing cached upstream release data.
     </div>
 
     <div
@@ -142,8 +173,12 @@ function formatDate(iso: string | null): string {
           </button>
         </div>
       </div>
-      <p v-if="container.lastChecked" :class="`${UI.textDim} text-xs`">
-        Last checked: {{ formatDate(container.lastChecked) }}
+      <p
+        v-if="container.lastChecked"
+        :title="formatExactDate(container.lastChecked)"
+        :class="`${UI.textDim} text-xs`"
+      >
+        Last checked: {{ formatRelativeTime(container.lastChecked) }}
       </p>
     </div>
   </div>

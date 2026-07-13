@@ -11,17 +11,32 @@ function makeContainer(overrides: Partial<ContainerInfo> = {}): ContainerInfo {
     currentVersion: '4.0.0',
     composeFile: 'docker-compose.yml',
     githubRepo: 'linuxserver/sonarr',
-    latestVersion: '4.1.0',
+    latestUpstreamVersion: '4.1.0',
     publishedAt: '2024-06-01T00:00:00Z',
     status: 'up-to-date',
+    updateKind: null,
+    comparisonMode: 'exact',
+    historyComplete: true,
+    releaseDataStale: false,
     checkIssue: null,
-    breakingChangeReason: null,
+    breakingChanges: [],
     releaseUrl: 'https://github.com/linuxserver/sonarr/releases/tag/4.1.0',
     releaseNotes: null,
     releaseName: null,
     lastChecked: '2024-06-01T12:00:00Z',
     ...overrides,
   };
+}
+
+function makeBreakingChanges(reason: string): ContainerInfo['breakingChanges'] {
+  return [
+    {
+      version: '2.0.0',
+      releaseName: '2.0.0',
+      reason,
+      releaseUrl: 'https://github.com/example/app/releases/tag/2.0.0',
+    },
+  ];
 }
 
 const stubs = ['Package', 'ExternalLink', 'GitBranch', 'AlertTriangle'];
@@ -100,9 +115,9 @@ describe('ContainerCard – rendering', () => {
     expect(w.text()).toContain('4.1.0');
   });
 
-  it('shows "—" when latestVersion is null', () => {
+  it('shows "—" when latestUpstreamVersion is null', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ latestVersion: null }) },
+      props: { container: makeContainer({ latestUpstreamVersion: null }) },
       global: { stubs },
     });
     expect(w.text()).toContain('—');
@@ -129,16 +144,14 @@ describe('ContainerCard – rendering', () => {
     expect(w.text()).toContain('Link repo');
   });
 
-  it('formats lastChecked date using browser locale', () => {
+  it('shows a relative lastChecked date with the exact value as a tooltip', () => {
     const w = mount(ContainerCard, {
       props: { container: makeContainer({ lastChecked: '2024-06-01T12:00:00Z' }) },
       global: { stubs },
     });
-    // Verify the date contains the expected components (year, month, day) regardless of locale format
-    const text = w.text();
-    expect(text).toMatch(/2024/);
-    expect(text).toMatch(/0?6/); // month: 6 or 06
-    expect(text).toMatch(/0?1/); // day: 1 or 01
+    const checked = w.find('[title]');
+    expect(checked.text()).toContain('Last checked:');
+    expect(checked.attributes('title')).toMatch(/2024/);
   });
 
   it('does not show last-checked text when lastChecked is null', () => {
@@ -174,7 +187,7 @@ describe('ContainerCard – breaking change warning', () => {
       props: {
         container: makeContainer({
           status: 'breaking-change',
-          breakingChangeReason: 'Major version bump: 1.0.0 → 2.0.0',
+          breakingChanges: makeBreakingChanges('Major version bump: 1.0.0 → 2.0.0'),
         }),
       },
       global: { stubs },
@@ -184,7 +197,7 @@ describe('ContainerCard – breaking change warning', () => {
 
   it('hides breaking change banner for "up-to-date" status', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'up-to-date', breakingChangeReason: null }) },
+      props: { container: makeContainer({ status: 'up-to-date', breakingChanges: [] }) },
       global: { stubs },
     });
     expect(w.text()).not.toContain('Major version bump');
@@ -193,7 +206,7 @@ describe('ContainerCard – breaking change warning', () => {
   it('hides breaking change banner when status is "breaking-change" but reason is null', () => {
     const w = mount(ContainerCard, {
       props: {
-        container: makeContainer({ status: 'breaking-change', breakingChangeReason: null }),
+        container: makeContainer({ status: 'breaking-change', breakingChanges: [] }),
       },
       global: { stubs },
     });
@@ -207,7 +220,10 @@ describe('ContainerCard – card border classes', () => {
   it('applies red border class for "breaking-change" status', () => {
     const w = mount(ContainerCard, {
       props: {
-        container: makeContainer({ status: 'breaking-change', breakingChangeReason: 'reason' }),
+        container: makeContainer({
+          status: 'breaking-change',
+          breakingChanges: makeBreakingChanges('reason'),
+        }),
       },
       global: { stubs },
     });
@@ -264,7 +280,7 @@ describe('ContainerCard – version highlight', () => {
         container: makeContainer({
           status: 'update-available',
           currentVersion: '4.0.0',
-          latestVersion: '4.1.0',
+          latestUpstreamVersion: '4.1.0',
         }),
       },
       global: { stubs },
@@ -289,8 +305,8 @@ describe('ContainerCard – version highlight', () => {
         container: makeContainer({
           status: 'breaking-change',
           currentVersion: '1.0.0',
-          latestVersion: '2.0.0',
-          breakingChangeReason: 'Major version bump',
+          latestUpstreamVersion: '2.0.0',
+          breakingChanges: makeBreakingChanges('Major version bump'),
         }),
       },
       global: { stubs },
@@ -301,7 +317,7 @@ describe('ContainerCard – version highlight', () => {
 
   it('does not highlight latest version for "unknown" status', () => {
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ status: 'unknown', latestVersion: null }) },
+      props: { container: makeContainer({ status: 'unknown', latestUpstreamVersion: null }) },
       global: { stubs },
     });
     expect(w.find('.text-amber-300').exists()).toBe(false);
@@ -310,7 +326,11 @@ describe('ContainerCard – version highlight', () => {
   it('does not highlight latest version for "no-repo" status', () => {
     const w = mount(ContainerCard, {
       props: {
-        container: makeContainer({ status: 'no-repo', githubRepo: null, latestVersion: null }),
+        container: makeContainer({
+          status: 'no-repo',
+          githubRepo: null,
+          latestUpstreamVersion: null,
+        }),
       },
       global: { stubs },
     });
@@ -320,9 +340,9 @@ describe('ContainerCard – version highlight', () => {
 
 describe('ContainerCard – edge cases', () => {
   it('shows "—" for both current and latest when versions are empty strings', () => {
-    // latestVersion null → shows "—"; currentVersion is always a string from parser
+    // latestUpstreamVersion null → shows "—"; currentVersion is always a string from parser
     const w = mount(ContainerCard, {
-      props: { container: makeContainer({ latestVersion: null }) },
+      props: { container: makeContainer({ latestUpstreamVersion: null }) },
       global: { stubs },
     });
     expect(w.text()).toContain('—');
@@ -332,7 +352,10 @@ describe('ContainerCard – edge cases', () => {
     // breaking-change is a superset of "has update" — border should be red (breaking takes priority)
     const w = mount(ContainerCard, {
       props: {
-        container: makeContainer({ status: 'breaking-change', breakingChangeReason: 'reason' }),
+        container: makeContainer({
+          status: 'breaking-change',
+          breakingChanges: makeBreakingChanges('reason'),
+        }),
       },
       global: { stubs },
     });

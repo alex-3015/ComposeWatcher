@@ -7,6 +7,7 @@ const EMPTY_META: ContainersMeta = {
   refreshing: false,
   refreshedAt: null,
   refreshError: null,
+  githubRateLimit: null,
 };
 
 export function useContainers() {
@@ -18,6 +19,7 @@ export function useContainers() {
   const refreshError = ref<string | null>(null);
   let controller: AbortController | null = null;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  let requestInFlight: Promise<void> | null = null;
 
   function schedulePoll(): void {
     if (pollTimer) clearTimeout(pollTimer);
@@ -25,6 +27,7 @@ export function useContainers() {
   }
 
   async function fetchContainers(forceRefresh = false): Promise<void> {
+    if (requestInFlight && !forceRefresh) return requestInFlight;
     controller?.abort();
     controller = new AbortController();
     const requestController = controller;
@@ -36,23 +39,31 @@ export function useContainers() {
       error.value = null;
     }
 
-    try {
-      const response = await getContainers(forceRefresh, requestController.signal);
-      if (requestController !== controller) return;
-      containers.value = response.data;
-      meta.value = response.meta;
-      refreshError.value = response.meta.refreshError?.message ?? null;
-      if (response.meta.refreshing) schedulePoll();
-    } catch (caught) {
-      if (requestController.signal.aborted || requestController !== controller) return;
-      const message = caught instanceof Error ? caught.message : 'Unknown error';
-      if (forceRefresh || containers.value.length > 0) refreshError.value = message;
-      else error.value = message;
-    } finally {
-      if (requestController === controller) {
-        loading.value = false;
-        refreshing.value = false;
+    const run = (async () => {
+      try {
+        const response = await getContainers(forceRefresh, requestController.signal);
+        if (requestController !== controller) return;
+        containers.value = response.data;
+        meta.value = response.meta;
+        refreshError.value = response.meta.refreshError?.message ?? null;
+        if (response.meta.refreshing) schedulePoll();
+      } catch (caught) {
+        if (requestController.signal.aborted || requestController !== controller) return;
+        const message = caught instanceof Error ? caught.message : 'Unknown error';
+        if (forceRefresh || containers.value.length > 0) refreshError.value = message;
+        else error.value = message;
+      } finally {
+        if (requestController === controller) {
+          loading.value = false;
+          refreshing.value = false;
+        }
       }
+    })();
+    requestInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (requestInFlight === run) requestInFlight = null;
     }
   }
 

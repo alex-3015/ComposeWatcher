@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import {
   RefreshCw,
   Container,
@@ -8,24 +8,39 @@ import {
   AlertCircle,
   HelpCircle,
   Search,
+  TrendingUp,
+  LayoutGrid,
+  List,
 } from '@lucide/vue';
-import type { ContainerInfo } from './types';
+import type { CheckIssueCode, ContainerInfo } from './types';
 import ComposeGroup from './components/ComposeGroup.vue';
 import RepoModal from './components/RepoModal.vue';
 import StatCard from './components/StatCard.vue';
 import { STATUS_THEME, UI } from './theme';
 import { useContainers } from './composables/useContainers';
-import type { CheckIssueCode } from './types';
+import { formatExactDate } from './format';
 
 type FilterStatus = 'all' | ContainerInfo['status'];
+type SortMode = 'priority' | 'name' | 'compose' | 'published';
+type ViewMode = 'cards' | 'compact';
 
+const PREFERENCES_KEY = 'compose-watcher:dashboard:v1';
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const FILTER_OPTIONS: { value: FilterStatus; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'breaking-change', label: 'Breaking' },
   { value: 'update-available', label: 'Updates' },
   { value: 'up-to-date', label: 'Up to date' },
-  { value: 'no-repo', label: 'No repo' },
+  { value: 'ahead', label: 'Ahead' },
   { value: 'unknown', label: 'Unknown' },
+  { value: 'no-repo', label: 'No repo' },
+];
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: 'priority', label: 'Priority' },
+  { value: 'name', label: 'Name' },
+  { value: 'compose', label: 'Compose file' },
+  { value: 'published', label: 'Release date' },
 ];
 
 const {
@@ -40,11 +55,61 @@ const {
   updateRepository,
 } = useContainers();
 const filter = ref<FilterStatus>('all');
+const sortMode = ref<SortMode>('priority');
+const viewMode = ref<ViewMode>('cards');
 const searchQuery = ref('');
 const modalContainer = ref<ContainerInfo | null>(null);
 const saveError = ref<string | null>(null);
 const collapsedGroups = ref<Set<string>>(new Set());
 const dismissedIssues = ref<Set<CheckIssueCode>>(new Set());
+let autoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let lastFetchAt = 0;
+
+function isFilterStatus(value: unknown): value is FilterStatus {
+  return FILTER_OPTIONS.some((option) => option.value === value);
+}
+
+function isSortMode(value: unknown): value is SortMode {
+  return SORT_OPTIONS.some((option) => option.value === value);
+}
+
+function loadPreferences(): void {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw) as Record<string, unknown>;
+    if (isFilterStatus(saved.filter)) filter.value = saved.filter;
+    if (isSortMode(saved.sortMode)) sortMode.value = saved.sortMode;
+    if (saved.viewMode === 'cards' || saved.viewMode === 'compact') viewMode.value = saved.viewMode;
+    if (Array.isArray(saved.collapsedGroups)) {
+      collapsedGroups.value = new Set(
+        saved.collapsedGroups.filter((value): value is string => typeof value === 'string'),
+      );
+    }
+  } catch {
+    try {
+      localStorage.removeItem(PREFERENCES_KEY);
+    } catch {
+      // Preferences are optional; storage may be disabled by the browser.
+    }
+  }
+}
+
+function savePreferences(): void {
+  try {
+    localStorage.setItem(
+      PREFERENCES_KEY,
+      JSON.stringify({
+        filter: filter.value,
+        sortMode: sortMode.value,
+        viewMode: viewMode.value,
+        collapsedGroups: [...collapsedGroups.value],
+      }),
+    );
+  } catch {
+    // Dashboard behavior must not depend on browser storage availability.
+  }
+}
 
 async function handleSaveRepo(containerId: string, repo: string | null) {
   saveError.value = null;
@@ -96,16 +161,36 @@ const counts = computed(() => ({
   breaking: countForStatus('breaking-change'),
   updates: countForStatus('update-available'),
   ok: countForStatus('up-to-date'),
+  ahead: countForStatus('ahead'),
+  unknown: countForStatus('unknown'),
   noRepo: countForStatus('no-repo'),
 }));
 
 const STATUS_ORDER: Record<ContainerInfo['status'], number> = {
   'breaking-change': 0,
   'update-available': 1,
-  'up-to-date': 2,
+  unknown: 2,
   'no-repo': 3,
-  unknown: 4,
+  ahead: 4,
+  'up-to-date': 5,
 };
+
+function publishedTime(container: ContainerInfo): number {
+  if (!container.publishedAt) return 0;
+  const timestamp = new Date(container.publishedAt).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareContainers(left: ContainerInfo, right: ContainerInfo): number {
+  if (sortMode.value === 'name') return left.name.localeCompare(right.name);
+  if (sortMode.value === 'published') {
+    return publishedTime(right) - publishedTime(left) || left.name.localeCompare(right.name);
+  }
+  if (sortMode.value === 'compose') {
+    return left.composeFile.localeCompare(right.composeFile) || left.name.localeCompare(right.name);
+  }
+  return STATUS_ORDER[left.status] - STATUS_ORDER[right.status];
+}
 
 const filtered = computed(() => {
   let list =
@@ -120,7 +205,7 @@ const filtered = computed(() => {
     );
   }
 
-  return [...list].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  return [...list].sort(compareContainers);
 });
 
 const grouped = computed(() => {
@@ -145,6 +230,14 @@ const grouped = computed(() => {
       },
     }))
     .sort((a, b) => {
+      if (sortMode.value === 'name' || sortMode.value === 'compose') {
+        return a.composeFile.localeCompare(b.composeFile);
+      }
+      if (sortMode.value === 'published') {
+        const newestA = Math.max(0, ...a.containers.map(publishedTime));
+        const newestB = Math.max(0, ...b.containers.map(publishedTime));
+        return newestB - newestA || a.composeFile.localeCompare(b.composeFile);
+      }
       const aUrgent = a.counts.breaking + a.counts.updates;
       const bUrgent = b.counts.breaking + b.counts.updates;
       if (aUrgent !== bUrgent) return bUrgent - aUrgent;
@@ -162,7 +255,45 @@ function toggleGroup(composeFile: string) {
   collapsedGroups.value = s;
 }
 
-onMounted(() => fetchContainers());
+function setFilter(status: ContainerInfo['status']): void {
+  filter.value = filter.value === status ? 'all' : status;
+}
+
+function scheduleAutoRefresh(): void {
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+  if (document.visibilityState !== 'visible') return;
+  const delay = Math.max(0, AUTO_REFRESH_MS - (Date.now() - lastFetchAt));
+  autoRefreshTimer = setTimeout(() => void refreshContainers(false), delay);
+}
+
+async function refreshContainers(forceRefresh = false): Promise<void> {
+  await fetchContainers(forceRefresh);
+  lastFetchAt = Date.now();
+  scheduleAutoRefresh();
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState !== 'visible') {
+    if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+    autoRefreshTimer = null;
+    return;
+  }
+  if (Date.now() - lastFetchAt >= AUTO_REFRESH_MS) void refreshContainers(false);
+  else scheduleAutoRefresh();
+}
+
+watch([filter, sortMode, viewMode, collapsedGroups], savePreferences);
+
+onMounted(() => {
+  loadPreferences();
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  void refreshContainers(false);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+});
 </script>
 
 <template>
@@ -189,7 +320,7 @@ onMounted(() => fetchContainers());
           :disabled="refreshing"
           aria-label="Refresh container status"
           :class="`flex items-center gap-2 ${UI.inputBg} hover:bg-gray-700 disabled:opacity-50 border ${UI.borderSubtle} rounded-lg px-3 py-2 text-sm text-gray-300 transition-colors`"
-          @click="fetchContainers(true)"
+          @click="refreshContainers(true)"
         >
           <RefreshCw :size="14" :class="refreshing ? 'animate-spin' : ''" aria-hidden="true" />
           {{ refreshing ? 'Checking…' : 'Refresh' }}
@@ -224,6 +355,19 @@ onMounted(() => fetchContainers());
       </div>
 
       <div
+        v-if="
+          meta.githubRateLimit &&
+          meta.githubRateLimit.remaining <= Math.max(10, meta.githubRateLimit.limit * 0.1)
+        "
+        role="status"
+        :class="`${UI.inputBg} border ${UI.borderSubtle} rounded-xl px-4 py-3 mb-5 text-sm ${UI.textSecondary}`"
+      >
+        GitHub API: {{ meta.githubRateLimit.remaining }} of
+        {{ meta.githubRateLimit.limit }} requests remaining. Resets
+        {{ formatExactDate(meta.githubRateLimit.resetAt) }}.
+      </div>
+
+      <div
         v-for="summary in issueSummaries"
         :key="summary.code"
         role="alert"
@@ -247,7 +391,7 @@ onMounted(() => fetchContainers());
       <!-- Stats -->
       <div
         v-if="!loading && containers.length > 0"
-        class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6"
+        class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-6"
       >
         <StatCard
           :icon="AlertCircle"
@@ -256,6 +400,8 @@ onMounted(() => fetchContainers());
           :bg-class="STATUS_THEME['breaking-change'].bg"
           :border-class="STATUS_THEME['breaking-change'].border"
           :text-class="STATUS_THEME['breaking-change'].text"
+          :active="filter === 'breaking-change'"
+          @select="setFilter('breaking-change')"
         />
         <StatCard
           :icon="AlertTriangle"
@@ -264,6 +410,8 @@ onMounted(() => fetchContainers());
           :bg-class="STATUS_THEME['update-available'].bg"
           :border-class="STATUS_THEME['update-available'].border"
           :text-class="STATUS_THEME['update-available'].text"
+          :active="filter === 'update-available'"
+          @select="setFilter('update-available')"
         />
         <StatCard
           :icon="CheckCircle"
@@ -272,6 +420,28 @@ onMounted(() => fetchContainers());
           :bg-class="STATUS_THEME['up-to-date'].bg"
           :border-class="STATUS_THEME['up-to-date'].border"
           :text-class="STATUS_THEME['up-to-date'].text"
+          :active="filter === 'up-to-date'"
+          @select="setFilter('up-to-date')"
+        />
+        <StatCard
+          :icon="TrendingUp"
+          :count="counts.ahead"
+          label="Ahead"
+          :bg-class="STATUS_THEME.ahead.bg"
+          :border-class="STATUS_THEME.ahead.border"
+          :text-class="STATUS_THEME.ahead.text"
+          :active="filter === 'ahead'"
+          @select="setFilter('ahead')"
+        />
+        <StatCard
+          :icon="HelpCircle"
+          :count="counts.unknown"
+          label="Unknown"
+          :bg-class="STATUS_THEME.unknown.bg"
+          :border-class="STATUS_THEME.unknown.border"
+          :text-class="STATUS_THEME.unknown.text"
+          :active="filter === 'unknown'"
+          @select="setFilter('unknown')"
         />
         <StatCard
           :icon="HelpCircle"
@@ -280,13 +450,18 @@ onMounted(() => fetchContainers());
           :bg-class="STATUS_THEME['no-repo'].bg"
           :border-class="STATUS_THEME['no-repo'].border"
           :text-class="STATUS_THEME['no-repo'].text"
+          :active="filter === 'no-repo'"
+          @select="setFilter('no-repo')"
         />
       </div>
 
-      <!-- Search -->
-      <div v-if="!loading && containers.length > 0" class="mb-4">
-        <label for="container-search" class="sr-only">Search containers</label>
+      <!-- Dashboard controls -->
+      <div
+        v-if="!loading && containers.length > 0"
+        class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-3 mb-4"
+      >
         <div class="relative">
+          <label for="container-search" class="sr-only">Search containers</label>
           <Search
             :size="16"
             :class="`absolute left-3 top-1/2 -translate-y-1/2 ${UI.textMuted}`"
@@ -299,6 +474,41 @@ onMounted(() => fetchContainers());
             placeholder="Search containers..."
             :class="`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${UI.inputBg} border ${UI.borderInput} ${UI.textPrimary} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 transition-colors`"
           />
+        </div>
+        <div>
+          <label for="container-sort" class="sr-only">Sort containers</label>
+          <select
+            id="container-sort"
+            v-model="sortMode"
+            :class="`w-full h-full px-3 py-2 rounded-lg text-sm ${UI.inputBg} border ${UI.borderInput} ${UI.textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500/40`"
+          >
+            <option v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
+              Sort: {{ option.label }}
+            </option>
+          </select>
+        </div>
+        <div
+          :class="`inline-flex ${UI.inputBg} border ${UI.borderInput} rounded-lg p-1`"
+          aria-label="Dashboard view"
+        >
+          <button
+            type="button"
+            aria-label="Card view"
+            :aria-pressed="viewMode === 'cards'"
+            :class="`p-1.5 rounded ${viewMode === 'cards' ? `${UI.primaryBg} text-white` : UI.textSecondary}`"
+            @click="viewMode = 'cards'"
+          >
+            <LayoutGrid :size="16" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Compact view"
+            :aria-pressed="viewMode === 'compact'"
+            :class="`p-1.5 rounded ${viewMode === 'compact' ? `${UI.primaryBg} text-white` : UI.textSecondary}`"
+            @click="viewMode = 'compact'"
+          >
+            <List :size="16" aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -344,7 +554,7 @@ onMounted(() => fetchContainers());
         <p class="text-red-300/70 text-sm mt-1">{{ error }}</p>
         <button
           :class="`mt-4 text-sm ${UI.errorText} ${UI.errorTextHover} underline`"
-          @click="fetchContainers()"
+          @click="refreshContainers()"
         >
           Try again
         </button>
@@ -377,6 +587,7 @@ onMounted(() => fetchContainers());
           :containers="group.containers"
           :counts="group.counts"
           :expanded="!collapsedGroups.has(group.composeFile)"
+          :view-mode="viewMode"
           @toggle="toggleGroup(group.composeFile)"
           @link-repo="modalContainer = $event"
         />

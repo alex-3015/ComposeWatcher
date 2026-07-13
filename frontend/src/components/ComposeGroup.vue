@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { ChevronDown, FolderOpen } from '@lucide/vue';
 import type { ContainerInfo } from '../types';
 import ContainerCard from './ContainerCard.vue';
+import ContainerRow from './ContainerRow.vue';
 import { UI } from '../theme';
 
 const props = defineProps<{
@@ -10,6 +11,7 @@ const props = defineProps<{
   containers: ContainerInfo[];
   counts: { breaking: number; updates: number; total: number };
   expanded: boolean;
+  viewMode: 'cards' | 'compact';
 }>();
 
 const groupId = computed(
@@ -56,11 +58,19 @@ const emit = defineEmits<{
       </div>
     </button>
     <div
-      v-show="expanded"
+      v-if="expanded && viewMode === 'cards'"
       :id="groupId"
       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6"
     >
       <ContainerCard
+        v-for="c in containers"
+        :key="c.id"
+        :container="c"
+        @link-repo="emit('linkRepo', $event)"
+      />
+    </div>
+    <div v-else-if="expanded" :id="groupId" class="space-y-2 mb-6">
+      <ContainerRow
         v-for="c in containers"
         :key="c.id"
         :container="c"

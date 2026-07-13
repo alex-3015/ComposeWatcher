@@ -13,7 +13,13 @@ describe('API client', () => {
       status: 200,
       json: async () => ({
         data: [],
-        meta: { stale: false, refreshing: false, refreshedAt: null, refreshError: null },
+        meta: {
+          stale: false,
+          refreshing: false,
+          refreshedAt: null,
+          refreshError: null,
+          githubRateLimit: null,
+        },
       }),
     });
 
