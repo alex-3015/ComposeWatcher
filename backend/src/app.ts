@@ -42,6 +42,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
         imgSrc: ["'self'", 'data:'],
         fontSrc: ["'self'"],
         connectSrc: ["'self'"],
+        upgradeInsecureRequests: null,
       },
     },
     crossOriginEmbedderPolicy: false,

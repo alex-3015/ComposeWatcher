@@ -102,6 +102,7 @@ describe('v3 API', () => {
     const server = await app();
     const response = await server.inject({ method: 'GET', url: '/api/health' });
     expect(response.json()).toEqual({ data: { status: 'ok', version: '3.0.0' } });
+    expect(response.headers['content-security-policy']).not.toContain('upgrade-insecure-requests');
     expect(fakeCatalog.list).not.toHaveBeenCalled();
     await server.close();
   });
