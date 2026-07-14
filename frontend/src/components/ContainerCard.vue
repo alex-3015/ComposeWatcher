@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { ExternalLink, GitBranch, AlertTriangle, Package, PanelRightOpen } from '@lucide/vue';
 import type { ContainerSummary } from '../types';
 import StatusBadge from './StatusBadge.vue';
+import { getContainerStatusPresentation, getUpstreamVersionLabel } from '../containerPresentation';
 import { STATUS_THEME, UI } from '../theme';
 import { formatExactDate, formatRelativeTime } from '../format';
 
@@ -22,6 +23,8 @@ const hasUpdate = computed(
   () =>
     props.container.status === 'update-available' || props.container.status === 'breaking-change',
 );
+const presentation = computed(() => getContainerStatusPresentation(props.container));
+const upstreamVersion = computed(() => getUpstreamVersionLabel(props.container));
 const cardClass = computed(() => {
   const status = STATUS_THEME[props.container.status];
   if (props.container.status === 'breaking-change')
@@ -50,7 +53,7 @@ const cardClass = computed(() => {
           <p :class="`${UI.textMuted} text-xs font-mono truncate`">{{ container.image }}</p>
         </div>
       </div>
-      <StatusBadge :status="container.status" />
+      <StatusBadge :container="container" />
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -65,9 +68,16 @@ const cardClass = computed(() => {
       >
         <p :class="`${UI.textMuted} text-xs mb-0.5`">Upstream release</p>
         <p
-          :class="`font-mono text-sm truncate ${hasUpdate ? STATUS_THEME['update-available'].textLight : UI.textPrimary}`"
+          :title="container.latestUpstreamVersion ?? presentation.description ?? upstreamVersion"
+          :class="`font-mono text-sm truncate ${
+            hasUpdate
+              ? STATUS_THEME['update-available'].textLight
+              : container.latestUpstreamVersion
+                ? UI.textPrimary
+                : UI.textMuted
+          }`"
         >
-          {{ container.latestUpstreamVersion ?? '—' }}
+          {{ upstreamVersion }}
         </p>
       </div>
     </div>
@@ -98,13 +108,17 @@ const cardClass = computed(() => {
       class="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300"
     >
       <AlertTriangle :size="14" aria-hidden="true" />
-      {{ container.breakingChangeCount }} breaking change{{
+      {{ container.breakingChangeCount }} breaking hint{{
         container.breakingChangeCount === 1 ? '' : 's'
       }}
       detected
     </div>
-    <p v-if="container.checkIssue" class="text-xs text-amber-300" role="status">
-      {{ container.checkIssue.message }}
+    <p
+      v-if="presentation.description"
+      :class="`text-xs ${container.dataState === 'error' ? 'text-amber-300' : UI.textSecondary}`"
+      role="status"
+    >
+      {{ presentation.description }}
     </p>
 
     <div :class="`mt-auto flex flex-col gap-2 pt-3 border-t ${UI.borderDefault}`">
@@ -131,7 +145,7 @@ const cardClass = computed(() => {
           @click="emit('linkRepo', container)"
         >
           <GitBranch :size="12" class="shrink-0" aria-hidden="true" />
-          <span class="truncate">{{ container.githubRepo ?? 'Link repo' }}</span>
+          <span class="truncate">{{ container.githubRepo ?? 'Link repository' }}</span>
         </button>
       </div>
       <p

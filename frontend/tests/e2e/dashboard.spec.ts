@@ -32,7 +32,10 @@ test('repository mapping updates only the selected summary', async ({ page }) =>
   const myappCard = page
     .getByRole('article')
     .filter({ has: page.getByRole('heading', { name: 'myapp' }) });
-  await myappCard.getByRole('button', { name: 'Edit GitHub repository for myapp' }).click();
+  const repositoryButton = myappCard.getByRole('button', {
+    name: 'Edit GitHub repository for myapp',
+  });
+  await repositoryButton.click();
 
   const dialog = page.getByRole('dialog', { name: /Link GitHub Repository/i });
   await dialog.getByLabel(/GitHub Repository/i).fill('example/myapp');
@@ -41,6 +44,27 @@ test('repository mapping updates only the selected summary', async ({ page }) =>
   await expect(dialog).toBeHidden();
   await expect(myappCard.getByText('example/myapp')).toBeVisible();
   await expect(myappCard.getByText('pending data')).toBeVisible();
+});
+
+test('compact view explains unavailable comparisons and repository actions', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Compact view' }).click();
+  const mobile = testInfo.project.name.startsWith('mobile');
+
+  const filters = page.getByRole('group', { name: 'Container filters' });
+  await expect(filters.getByRole('button')).toHaveCount(5);
+
+  const portainerRow = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('heading', { name: 'portainer' }) });
+  await expect(portainerRow.getByText('Check unavailable')).toBeVisible();
+  await expect(
+    portainerRow.getByText(
+      mobile ? 'No reliable release comparison is available.' : 'No release found',
+    ),
+  ).toBeVisible();
 });
 
 test('detail panel becomes a full-width mobile dialog', async ({ page }, testInfo) => {

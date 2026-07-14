@@ -13,10 +13,10 @@ export const UI = {
   borderInput: 'border-gray-600',
 
   textPrimary: 'text-white',
-  textSecondary: 'text-gray-400',
-  textMuted: 'text-gray-500',
-  textFaint: 'text-gray-600',
-  textDim: 'text-gray-700',
+  textSecondary: 'text-gray-300',
+  textMuted: 'text-gray-400',
+  textFaint: 'text-gray-500',
+  textDim: 'text-gray-500',
   textHover: 'hover:text-gray-300',
 
   primaryText: 'text-blue-400',
@@ -45,7 +45,7 @@ export const STATUS_THEME: Record<
   }
 > = {
   'breaking-change': {
-    badgeLabel: 'Breaking change!',
+    badgeLabel: 'Breaking change',
     text: 'text-red-400',
     textLight: 'text-red-300',
     bg: 'bg-red-500/10',
@@ -89,7 +89,7 @@ export const STATUS_THEME: Record<
     shadow: '',
   },
   unknown: {
-    badgeLabel: 'Unknown',
+    badgeLabel: 'Check unavailable',
     text: 'text-gray-400',
     textLight: 'text-gray-400',
     bg: 'bg-gray-500/10',
@@ -100,7 +100,7 @@ export const STATUS_THEME: Record<
     shadow: '',
   },
   'no-repo': {
-    badgeLabel: 'No repo linked',
+    badgeLabel: 'Repository needed',
     text: 'text-blue-400',
     textLight: 'text-blue-400',
     bg: 'bg-blue-500/10',

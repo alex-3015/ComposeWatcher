@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { load as loadYaml } from 'js-yaml';
 import type { ContainerInfo } from '../types.js';
+import { interpolateComposeValue, loadComposeEnvironment } from './composeInterpolation.js';
 import { consoleServiceLogger, type ServiceLogger } from './serviceLogger.js';
 
 const DOCKER_DIR = process.env.DOCKER_DIR ?? '/docker';
@@ -140,6 +141,7 @@ export async function scanDockerDir(
     try {
       const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = loadYaml(content);
+      const environment = await loadComposeEnvironment(filePath);
 
       if (parsed == null || typeof parsed !== 'object') {
         logger.warn({ filePath }, 'Skipping compose file with invalid structure');
@@ -160,7 +162,9 @@ export async function scanDockerDir(
       )) {
         if (typeof service?.image !== 'string' || service.image.trim().length === 0) continue;
 
-        const { image, version } = parseImageVersion(service.image);
+        const resolvedImage = interpolateComposeValue(service.image, environment);
+        if (resolvedImage.trim().length === 0) continue;
+        const { image, version } = parseImageVersion(resolvedImage);
         const id = `${relPath}::${serviceName}`;
 
         containers.push({

@@ -159,4 +159,13 @@ describe('useDashboardView', () => {
     view.toggleGroup('a.yml');
     expect(view.collapsedGroups.value.has('a.yml')).toBe(false);
   });
+
+  it('expands and collapses a selected set of groups', () => {
+    const view = useDashboardView(containers());
+    view.toggleGroup('unrelated.yml');
+    view.setGroupsExpanded(['a.yml', 'b.yml'], false);
+    expect([...view.collapsedGroups.value]).toEqual(['unrelated.yml', 'a.yml', 'b.yml']);
+    view.setGroupsExpanded(['a.yml', 'b.yml'], true);
+    expect([...view.collapsedGroups.value]).toEqual(['unrelated.yml']);
+  });
 });

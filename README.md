@@ -9,6 +9,7 @@ v3 ersetzt die v2-API inkompatibel. Bestehende gültige Repository-Zuordnungen w
 ## Funktionen
 
 - Schneller Start aus Compose-Dateien und kompatiblen Snapshots; GitHub wird danach im Hintergrund aktualisiert
+- Auflösung von Image-Variablen aus der `.env` neben der jeweiligen Compose-Datei, einschließlich `:-`- und `-`-Defaults
 - Ein GitHub-Request pro eindeutigem Repository mit begrenzter Parallelität, ETags und Rate-Limit-Backoff
 - Race-freie globale und gezielte Refreshes; eine neue Repository-Zuordnung kann nicht von einem alten Lauf überschrieben werden
 - Kompakte Listen-API und bei Bedarf geladene Release Notes, Diagnosen und Breaking-Change-Historie
@@ -73,7 +74,7 @@ Alle JSON-Schreibvorgänge erfolgen atomar über temporäre Dateien und `rename`
 | `error`    | Prüfung fehlgeschlagen           |
 | `unlinked` | kein GitHub-Repository verknüpft |
 
-GitHub Releases sind die einzige Updatequelle. Ein neuer GitHub Release garantiert nicht, dass bereits ein passender Registry-Tag existiert. Nicht vergleichbare Tags wie `latest`, Digests oder Variablen bleiben deshalb `unknown`.
+GitHub Releases sind die einzige Updatequelle. Ein neuer GitHub Release garantiert nicht, dass bereits ein passender Registry-Tag existiert. Image-Ausdrücke werden vor dem Vergleich mit der `.env` im Verzeichnis der Compose-Datei aufgelöst. Nicht auflösbare Variablen, Digests und Rolling Tags wie `latest`, `release` oder `stable` bleiben `unknown`; die Oberfläche zeigt den konkreten Grund als `Not comparable` an.
 
 ## API
 

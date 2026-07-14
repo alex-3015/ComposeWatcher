@@ -14,7 +14,36 @@ describe('ContainerRow', () => {
     expect(wrapper.text()).toContain('sonarr');
     expect(wrapper.text()).toContain('4.0.0');
     expect(wrapper.text()).toContain('4.1.0');
+    expect(wrapper.text()).toContain('ghcr.io/linuxserver/sonarr');
+    expect(wrapper.text()).not.toContain('docker-compose.yml');
     expect(wrapper.text()).not.toContain('Improvements');
+  });
+
+  it('falls back to the package icon when an image fails', async () => {
+    const wrapper = mount(ContainerRow, {
+      props: { container: summary() },
+      global: { stubs },
+    });
+    await wrapper.get('img').trigger('error');
+    expect(wrapper.find('img').exists()).toBe(false);
+    expect(wrapper.html()).toContain('package');
+  });
+
+  it('shows a reason instead of an unexplained missing release', () => {
+    const wrapper = mount(ContainerRow, {
+      props: {
+        container: summary({
+          status: 'unknown',
+          comparisonMode: 'unverifiable',
+          currentVersion: '${VERSION:-release}',
+          latestUpstreamVersion: null,
+        }),
+      },
+      global: { stubs },
+    });
+    expect(wrapper.text()).toContain('Not comparable');
+    expect(wrapper.text()).toContain('Compose variable');
+    expect(wrapper.text()).not.toContain('—');
   });
 
   it('emits detail and repository actions', async () => {

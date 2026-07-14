@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { AlertCircle, AlertTriangle, CheckCircle, LayoutGrid, List, Search } from '@lucide/vue';
+import { LayoutGrid, List, Search } from '@lucide/vue';
 import type { FilterMode, SortMode, ViewMode } from '../composables/useDashboardView';
 import { FILTER_OPTIONS, SORT_OPTIONS } from '../composables/useDashboardView';
-import { STATUS_THEME, UI } from '../theme';
-import StatCard from './StatCard.vue';
+import { UI } from '../theme';
 
 defineProps<{ counts: Record<FilterMode, number> }>();
 const filter = defineModel<FilterMode>('filter', { required: true });
@@ -13,49 +12,6 @@ const searchQuery = defineModel<string>('searchQuery', { required: true });
 </script>
 
 <template>
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-    <StatCard
-      :icon="AlertCircle"
-      :count="counts.breaking"
-      label="Breaking"
-      :bg-class="STATUS_THEME['breaking-change'].bg"
-      :border-class="STATUS_THEME['breaking-change'].border"
-      :text-class="STATUS_THEME['breaking-change'].text"
-      :active="filter === 'breaking'"
-      @select="filter = filter === 'breaking' ? 'all' : 'breaking'"
-    />
-    <StatCard
-      :icon="AlertTriangle"
-      :count="counts.updates"
-      label="Updates"
-      :bg-class="STATUS_THEME['update-available'].bg"
-      :border-class="STATUS_THEME['update-available'].border"
-      :text-class="STATUS_THEME['update-available'].text"
-      :active="filter === 'updates'"
-      @select="filter = filter === 'updates' ? 'all' : 'updates'"
-    />
-    <StatCard
-      :icon="AlertTriangle"
-      :count="counts.attention"
-      label="Needs attention"
-      :bg-class="STATUS_THEME.unknown.bg"
-      :border-class="STATUS_THEME.unknown.border"
-      :text-class="STATUS_THEME.unknown.text"
-      :active="filter === 'attention'"
-      @select="filter = filter === 'attention' ? 'all' : 'attention'"
-    />
-    <StatCard
-      :icon="CheckCircle"
-      :count="counts.current"
-      label="Current"
-      :bg-class="STATUS_THEME['up-to-date'].bg"
-      :border-class="STATUS_THEME['up-to-date'].border"
-      :text-class="STATUS_THEME['up-to-date'].text"
-      :active="filter === 'current'"
-      @select="filter = filter === 'current' ? 'all' : 'current'"
-    />
-  </div>
-
   <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-3 mb-4">
     <div class="relative">
       <label for="container-search" class="sr-only">Search containers</label>
@@ -100,20 +56,28 @@ const searchQuery = defineModel<string>('searchQuery', { required: true });
     </div>
   </div>
 
-  <div class="flex flex-wrap gap-2 mb-5">
+  <div class="flex flex-wrap gap-2 mb-5" role="group" aria-label="Container filters">
     <button
       v-for="option in FILTER_OPTIONS"
       :key="option.value"
+      type="button"
       :aria-pressed="filter === option.value"
       :class="[
-        'px-3 py-1.5 rounded-lg text-xs font-medium border',
+        'inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border focus:outline-none focus:ring-2 focus:ring-blue-500/60',
         filter === option.value
-          ? `${UI.primaryBg} border-blue-500`
-          : `${UI.inputBg} ${UI.borderSubtle} ${UI.textSecondary}`,
+          ? `${UI.primaryBg} border-blue-400 text-white`
+          : `${UI.inputBg} ${UI.borderSubtle} ${UI.textSecondary} hover:border-gray-500`,
       ]"
       @click="filter = option.value"
     >
-      {{ option.label }} <span class="ml-1 opacity-60">{{ counts[option.value] }}</span>
+      {{ option.label }}
+      <span
+        :class="`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs ${
+          filter === option.value ? 'bg-white/15 text-white' : 'bg-gray-700 text-gray-300'
+        }`"
+      >
+        {{ counts[option.value] }}
+      </span>
     </button>
   </div>
 </template>

@@ -177,8 +177,7 @@ describe('RepoModal – events', () => {
 
   it('emits "close" when X button in header is clicked', async () => {
     const w = mount(RepoModal, { props: { container: makeContainer() }, global: { stubs } });
-    // The header X button is the only button with class text-gray-500
-    await w.find('button.text-gray-500').trigger('click');
+    await w.get('button[aria-label="Close repository dialog"]').trigger('click');
     expect(w.emitted('close')).toBeTruthy();
   });
 

@@ -63,6 +63,21 @@ function parseVersion(value: string): ParsedVersion | null {
   };
 }
 
+function unverifiableVersionMessage(value: string): string {
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  if (trimmed.includes('${') || /\$[a-zA-Z_][a-zA-Z0-9_]*/.test(trimmed)) {
+    return 'The configured image tag contains an unresolved Compose variable.';
+  }
+  if (lower.startsWith('sha256:')) {
+    return 'The configured image is pinned by digest and cannot be compared with a GitHub release version.';
+  }
+  if (['latest', 'release', 'stable', 'edge', 'main', 'master', 'nightly'].includes(lower)) {
+    return `The configured image uses the rolling tag "${trimmed}", which cannot be compared reliably.`;
+  }
+  return `The configured image tag "${trimmed || '(empty)'}" cannot be compared reliably.`;
+}
+
 function compareVersions(left: ParsedVersion, right: ParsedVersion): number {
   const length = Math.max(left.segments.length, right.segments.length, 3);
   for (let index = 0; index < length; index += 1) {
@@ -207,7 +222,7 @@ export function enrichContainer(
       comparisonMode: 'unverifiable',
       checkIssue: createCheckIssue(
         'unverifiable-version',
-        'The configured image tag cannot be compared reliably.',
+        unverifiableVersionMessage(container.currentVersion),
       ),
       releaseDataStale: result.stale,
       lastChecked: result.checkedAt,

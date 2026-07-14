@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { X, ExternalLink, GitBranch, AlertTriangle, LoaderCircle } from '@lucide/vue';
 import type { ContainerDetail, ContainerSummary } from '../types';
 import StatusBadge from './StatusBadge.vue';
+import { getContainerStatusPresentation, getUpstreamVersionLabel } from '../containerPresentation';
 import { UI } from '../theme';
 import { formatExactDate, formatRelativeTime } from '../format';
 
@@ -23,6 +24,8 @@ const panel = ref<HTMLElement | null>(null);
 const closeButton = ref<HTMLButtonElement | null>(null);
 let previouslyFocused: HTMLElement | null = null;
 const visible = computed(() => props.detail ?? props.container);
+const presentation = computed(() => getContainerStatusPresentation(visible.value));
+const upstreamVersion = computed(() => getUpstreamVersionLabel(visible.value));
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
@@ -73,7 +76,7 @@ onBeforeUnmount(() => previouslyFocused?.focus());
             {{ container.name }}
           </h2>
         </div>
-        <StatusBadge :status="container.status" />
+        <StatusBadge :container="visible" />
         <button
           ref="closeButton"
           aria-label="Close details"
@@ -95,7 +98,7 @@ onBeforeUnmount(() => previouslyFocused?.focus());
           <div :class="`${UI.versionBoxBg} rounded-lg p-3`">
             <p :class="`${UI.textMuted} text-xs`">Upstream release</p>
             <p :class="`${UI.textPrimary} font-mono text-sm break-all`">
-              {{ visible.latestUpstreamVersion ?? '—' }}
+              {{ upstreamVersion }}
             </p>
           </div>
         </div>
@@ -112,6 +115,9 @@ onBeforeUnmount(() => previouslyFocused?.focus());
           <p v-if="visible.lastChecked" :title="formatExactDate(visible.lastChecked)">
             Checked:
             <span :class="UI.textPrimary">{{ formatRelativeTime(visible.lastChecked) }}</span>
+          </p>
+          <p v-if="presentation.description" class="mt-2 text-xs">
+            {{ presentation.description }}
           </p>
         </div>
 
@@ -135,7 +141,7 @@ onBeforeUnmount(() => previouslyFocused?.focus());
         <template v-else-if="detail">
           <div v-if="detail.breakingChanges.length" class="space-y-2">
             <h3 :class="`${UI.textPrimary} font-medium flex items-center gap-2`">
-              <AlertTriangle :size="16" /> Breaking changes
+              <AlertTriangle :size="16" /> Breaking-change hints
             </h3>
             <a
               v-for="change in detail.breakingChanges"

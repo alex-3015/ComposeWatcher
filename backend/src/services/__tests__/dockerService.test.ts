@@ -175,6 +175,47 @@ describe('scanDockerDir', async () => {
     expect(result[0].latestUpstreamVersion).toBeNull();
   });
 
+  it('resolves image variables from the Compose file directory .env', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml'), mockFile('.env')]);
+    mockFs.readFileSync.mockImplementation((filePath: string) =>
+      filePath === path.join(DOCKER_DIR, '.env')
+        ? 'REGISTRY=ghcr.io\nIMAGE=immich-app/immich-server\nIMMICH_VERSION=v1.137.3\n'
+        : 'services:\n  server:\n    image: ${REGISTRY}/${IMAGE}:${IMMICH_VERSION:-release}\n',
+    );
+
+    const [container] = await scanDockerDir();
+
+    expect(container.image).toBe('ghcr.io/immich-app/immich-server');
+    expect(container.currentVersion).toBe('v1.137.3');
+    expect(container.githubRepo).toBe('immich-app/immich-server');
+  });
+
+  it('uses an inline default when no .env value is available', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);
+    mockFs.readFileSync.mockImplementation((filePath: string) => {
+      if (filePath === path.join(DOCKER_DIR, '.env')) throw new Error('ENOENT');
+      return 'services:\n  server:\n    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}\n';
+    });
+
+    const [container] = await scanDockerDir();
+
+    expect(container.currentVersion).toBe('release');
+  });
+
+  it('skips an image that resolves to an empty value', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml'), mockFile('.env')]);
+    mockFs.readFileSync.mockImplementation((filePath: string) =>
+      filePath === path.join(DOCKER_DIR, '.env')
+        ? 'IMAGE=\n'
+        : 'services:\n  server:\n    image: ${IMAGE}\n',
+    );
+
+    expect(await scanDockerDir()).toEqual([]);
+  });
+
   it('assigns id as "composeFile::serviceName"', async () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readdirSync.mockReturnValue([mockFile('docker-compose.yml')]);

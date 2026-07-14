@@ -197,6 +197,18 @@ describe('GitHub release comparison', () => {
     },
   );
 
+  it.each([
+    ['latest', 'rolling tag'],
+    ['sha256:abcdef', 'pinned by digest'],
+    ['${IMAGE_TAG}', 'unresolved Compose variable'],
+  ])('explains why %j is unverifiable', async (currentVersion, expectedReason) => {
+    mockReleases(makeRelease({ tag_name: '4.1.0' }));
+
+    const result = await enrich(makeContainer({ currentVersion }));
+
+    expect(result.checkIssue?.message).toContain(expectedReason);
+  });
+
   it('finds breaking signals in intermediate releases', async () => {
     mockReleases(
       makeRelease({ tag_name: '4.3.0', body: 'Newest fixes.' }),

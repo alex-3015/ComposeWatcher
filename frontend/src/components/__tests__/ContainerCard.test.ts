@@ -42,8 +42,20 @@ describe('ContainerCard', () => {
     });
     expect(wrapper.text()).toContain('stale data');
     expect(wrapper.text()).toContain('Normalized comparison');
-    expect(wrapper.text()).toContain('2 breaking changes');
+    expect(wrapper.text()).toContain('2 breaking hints');
     expect(wrapper.text()).toContain('Using cached data.');
+  });
+
+  it('labels the repository action when no repository is linked', () => {
+    const wrapper = mount(ContainerCard, {
+      props: {
+        container: summary({ status: 'no-repo', dataState: 'unlinked', githubRepo: null }),
+      },
+      global: { stubs },
+    });
+    expect(wrapper.get('[aria-label="Edit GitHub repository for sonarr"]').text()).toContain(
+      'Link repository',
+    );
   });
 
   it('emits detail and repository actions with the summary', async () => {

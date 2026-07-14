@@ -128,6 +128,15 @@ export function useDashboardView(containers: { value: ContainerSummary[] }) {
     collapsedGroups.value = next;
   }
 
+  function setGroupsExpanded(composeFiles: string[], expanded: boolean): void {
+    const next = new Set(collapsedGroups.value);
+    for (const composeFile of composeFiles) {
+      if (expanded) next.delete(composeFile);
+      else next.add(composeFile);
+    }
+    collapsedGroups.value = next;
+  }
+
   function loadPreferences(): void {
     try {
       const saved = JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') as Record<
@@ -176,6 +185,7 @@ export function useDashboardView(containers: { value: ContainerSummary[] }) {
     grouped,
     counts,
     toggleGroup,
+    setGroupsExpanded,
     loadPreferences,
   };
 }

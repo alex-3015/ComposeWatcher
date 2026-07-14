@@ -35,6 +35,7 @@ const {
   grouped,
   counts,
   toggleGroup,
+  setGroupsExpanded,
   loadPreferences,
 } = useDashboardView(containers);
 const detailState = useContainerDetail();
@@ -184,6 +185,32 @@ onBeforeUnmount(() => {
         No containers match this view.
       </div>
       <template v-else>
+        <div v-if="grouped.length > 1" class="flex justify-end gap-3 mb-3">
+          <button
+            type="button"
+            :class="`text-xs ${UI.textSecondary} ${UI.textHover} rounded focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
+            @click="
+              setGroupsExpanded(
+                grouped.map((group) => group.composeFile),
+                true,
+              )
+            "
+          >
+            Expand all
+          </button>
+          <button
+            type="button"
+            :class="`text-xs ${UI.textSecondary} ${UI.textHover} rounded focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
+            @click="
+              setGroupsExpanded(
+                grouped.map((group) => group.composeFile),
+                false,
+              )
+            "
+          >
+            Collapse all
+          </button>
+        </div>
         <ComposeGroup
           v-for="group in grouped"
           :key="group.composeFile"

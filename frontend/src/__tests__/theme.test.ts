@@ -118,11 +118,11 @@ describe('STATUS_THEME', () => {
   }
 
   it('badge labels match expected values', () => {
-    expect(STATUS_THEME['breaking-change'].badgeLabel).toBe('Breaking change!');
+    expect(STATUS_THEME['breaking-change'].badgeLabel).toBe('Breaking change');
     expect(STATUS_THEME['update-available'].badgeLabel).toBe('Update available');
     expect(STATUS_THEME['up-to-date'].badgeLabel).toBe('Up to date');
-    expect(STATUS_THEME['unknown'].badgeLabel).toBe('Unknown');
-    expect(STATUS_THEME['no-repo'].badgeLabel).toBe('No repo linked');
+    expect(STATUS_THEME['unknown'].badgeLabel).toBe('Check unavailable');
+    expect(STATUS_THEME['no-repo'].badgeLabel).toBe('Repository needed');
   });
 
   it('each status has distinct text color', () => {

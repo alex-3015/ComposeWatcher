@@ -45,7 +45,7 @@ const emit = defineEmits<{
           v-if="counts.breaking > 0"
           class="text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5"
         >
-          {{ counts.breaking }} breaking
+          {{ counts.breaking }} breaking hint{{ counts.breaking !== 1 ? 's' : '' }}
         </span>
         <span
           v-if="counts.updates > 0"
@@ -71,14 +71,26 @@ const emit = defineEmits<{
         @open-detail="emit('openDetail', $event)"
       />
     </div>
-    <div v-else-if="expanded" :id="groupId" class="space-y-2 mb-6">
-      <ContainerRow
-        v-for="c in containers"
-        :key="c.id"
-        :container="c"
-        @link-repo="emit('linkRepo', $event)"
-        @open-detail="emit('openDetail', $event)"
-      />
+    <div v-else-if="expanded" :id="groupId" class="mb-6">
+      <div
+        aria-hidden="true"
+        :class="`hidden lg:grid grid-cols-[minmax(13rem,1.35fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)_minmax(11rem,1fr)_auto] gap-x-4 px-4 pb-1.5 text-[11px] uppercase tracking-wide ${UI.textMuted}`"
+      >
+        <span>Container</span>
+        <span>Image tag</span>
+        <span>Upstream release</span>
+        <span>Status</span>
+        <span class="text-right">Actions</span>
+      </div>
+      <div class="space-y-1.5">
+        <ContainerRow
+          v-for="c in containers"
+          :key="c.id"
+          :container="c"
+          @link-repo="emit('linkRepo', $event)"
+          @open-detail="emit('openDetail', $event)"
+        />
+      </div>
     </div>
   </div>
 </template>
