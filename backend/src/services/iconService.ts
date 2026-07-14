@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'path';
 import type { ContainerInfo } from '../types.js';
 
@@ -10,6 +11,7 @@ const DOWNLOAD_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 1_024 * 1_024; // 1 MB
 const BATCH_SIZE = 5;
 const MAX_NAME_LENGTH = 128;
+const inFlightDownloads = new Map<string, Promise<boolean>>();
 
 /** Maps service names to selfh.st icon references for server-owned icon URLs. */
 const ICON_NAME_MAP: Record<string, string> = {
@@ -20,6 +22,21 @@ const ICON_NAME_MAP: Record<string, string> = {
 
 async function ensureIconsDir(): Promise<void> {
   await fs.mkdir(ICONS_DIR, { recursive: true });
+}
+
+/** Loads the locally available PNG filenames once for in-memory API projection. */
+export async function listLocalIconFileNames(): Promise<Set<string>> {
+  try {
+    await ensureIconsDir();
+    const entries = await fs.readdir(ICONS_DIR, { withFileTypes: true });
+    return new Set(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.png'))
+        .map((entry) => entry.name),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -64,11 +81,7 @@ export async function iconExistsLocally(serviceName: string): Promise<boolean> {
  * Download a single icon from the CDN and save it locally.
  * Returns true on success, false on any failure. Never throws.
  */
-export async function downloadIcon(serviceName: string): Promise<boolean> {
-  const fileName = getIconFileName(serviceName);
-  if (!fileName) return false;
-
-  await ensureIconsDir();
+async function downloadIconFile(fileName: string): Promise<boolean> {
   const finalPath = path.resolve(ICONS_DIR, fileName);
 
   // Path traversal guard
@@ -82,6 +95,7 @@ export async function downloadIcon(serviceName: string): Promise<boolean> {
 
   let tmpFile: string | null = null;
   try {
+    await ensureIconsDir();
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return false;
 
@@ -98,7 +112,7 @@ export async function downloadIcon(serviceName: string): Promise<boolean> {
     // Reject oversized responses (content-length may be missing or wrong)
     if (buf.byteLength > MAX_RESPONSE_BYTES) return false;
 
-    tmpFile = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
+    tmpFile = `${finalPath}.${process.pid}.${randomUUID()}.tmp`;
     await fs.writeFile(tmpFile, buf);
     await fs.rename(tmpFile, finalPath);
     return true;
@@ -116,27 +130,54 @@ export async function downloadIcon(serviceName: string): Promise<boolean> {
   }
 }
 
+export function downloadIcon(serviceName: string): Promise<boolean> {
+  const fileName = getIconFileName(serviceName);
+  if (!fileName) return Promise.resolve(false);
+
+  const inFlight = inFlightDownloads.get(fileName);
+  if (inFlight) return inFlight;
+
+  const download = downloadIconFile(fileName).finally(() => {
+    if (inFlightDownloads.get(fileName) === download) inFlightDownloads.delete(fileName);
+  });
+  inFlightDownloads.set(fileName, download);
+  return download;
+}
+
 /**
  * Download icons for all containers that are not yet cached locally.
- * Processes in parallel batches. Never throws.
+ * Processes in parallel batches and returns every available filename.
  */
-export async function downloadIconsForContainers(containers: ContainerInfo[]): Promise<void> {
-  // Deduplicate by icon filename
-  const seen = new Set<string>();
-  const toDownload: string[] = [];
+export async function downloadIconsForContainers(
+  containers: ContainerInfo[],
+): Promise<Set<string>> {
+  const candidates = new Map<string, string>();
+  const available = new Set<string>();
 
   for (const c of containers) {
     const fileName = getIconFileName(c.name);
-    if (!fileName || seen.has(fileName)) continue;
-    seen.add(fileName);
-    if (!(await iconExistsLocally(c.name))) {
-      toDownload.push(c.name);
+    if (fileName && !candidates.has(fileName)) candidates.set(fileName, c.name);
+  }
+
+  const entries = [...candidates.entries()];
+  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+    const batch = entries.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async ([fileName, serviceName]) => {
+        try {
+          const exists = await iconExistsLocally(serviceName);
+          return exists || (await downloadIcon(serviceName)) ? fileName : null;
+        } catch {
+          // A local filesystem failure for one candidate must not discard the
+          // successfully resolved icons from the rest of the batch.
+          return null;
+        }
+      }),
+    );
+    for (const fileName of results) {
+      if (fileName) available.add(fileName);
     }
   }
 
-  // Download in batches
-  for (let i = 0; i < toDownload.length; i += BATCH_SIZE) {
-    const batch = toDownload.slice(i, i + BATCH_SIZE);
-    await Promise.allSettled(batch.map((name) => downloadIcon(name)));
-  }
+  return available;
 }

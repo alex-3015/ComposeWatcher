@@ -33,7 +33,7 @@ test('repository mapping updates only the selected summary', async ({ page }) =>
     .getByRole('article')
     .filter({ has: page.getByRole('heading', { name: 'myapp' }) });
   const repositoryButton = myappCard.getByRole('button', {
-    name: 'Edit GitHub repository for myapp',
+    name: 'Link repository for myapp',
   });
   await repositoryButton.click();
 
@@ -46,25 +46,79 @@ test('repository mapping updates only the selected summary', async ({ page }) =>
   await expect(myappCard.getByText('pending data')).toBeVisible();
 });
 
+test('separates attention reasons and exposes a repository fix action', async ({ page }) => {
+  await page.goto('/');
+  const filters = page.getByRole('group', { name: 'Container filters' });
+  await expect(filters.getByRole('button')).toHaveCount(7);
+
+  await filters.getByRole('button', { name: /Check failed 1/ }).click();
+  await expect(page.getByRole('heading', { name: 'sonarr' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Fix repository for sonarr' })).toBeVisible();
+
+  await filters.getByRole('button', { name: /Repository missing 1/ }).click();
+  await expect(page.getByRole('heading', { name: 'myapp' })).toBeVisible();
+
+  await filters.getByRole('button', { name: /Not comparable 1/ }).click();
+  await expect(page.getByRole('heading', { name: 'portainer' })).toBeVisible();
+});
+
 test('compact view explains unavailable comparisons and repository actions', async ({
   page,
 }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith('mobile');
+  if (mobile) await page.setViewportSize({ width: 320, height: 800 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Compact view' }).click();
-  const mobile = testInfo.project.name.startsWith('mobile');
 
   const filters = page.getByRole('group', { name: 'Container filters' });
-  await expect(filters.getByRole('button')).toHaveCount(5);
+  await expect(filters.getByRole('button')).toHaveCount(7);
 
   const portainerRow = page
     .getByRole('article')
     .filter({ has: page.getByRole('heading', { name: 'portainer' }) });
-  await expect(portainerRow.getByText('Check unavailable')).toBeVisible();
-  await expect(
-    portainerRow.getByText(
-      mobile ? 'No reliable release comparison is available.' : 'No release found',
-    ),
-  ).toBeVisible();
+  const notComparable = portainerRow.getByText('Not comparable', { exact: true });
+  await expect(notComparable.first()).toBeVisible();
+  if (mobile) {
+    await expect(
+      portainerRow.getByText('The rolling tag "latest" does not identify a comparable version.'),
+    ).toBeVisible();
+    const viewportWidths = await page.evaluate(() => ({
+      client: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+    }));
+    expect(viewportWidths.scroll).toBeLessThanOrEqual(viewportWidths.client);
+  } else {
+    await expect(notComparable).toHaveCount(2);
+  }
+});
+
+test('mobile group headers wrap metadata and interactive targets remain touch sized', async ({
+  page,
+}, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith('mobile'), 'Mobile-only layout assertion');
+  await page.goto('/');
+
+  const group = page.getByRole('button', { name: /media-stack\/docker-compose\.yml/ });
+  const path = group.getByText('media-stack/docker-compose.yml', { exact: true });
+  const count = group.getByText('2 containers', { exact: true });
+  const pathBox = await path.boundingBox();
+  const countBox = await count.boundingBox();
+  expect(countBox?.y).toBeGreaterThan((pathBox?.y ?? 0) + (pathBox?.height ?? 0) - 1);
+
+  const undersized = await page
+    .locator('button:visible, a:visible, input:visible, select:visible')
+    .evaluateAll((elements) =>
+      elements
+        .map((element) => {
+          const box = element.getBoundingClientRect();
+          return {
+            label: element.getAttribute('aria-label') ?? element.textContent,
+            ...box.toJSON(),
+          };
+        })
+        .filter((box) => box.width < 44 || box.height < 44),
+    );
+  expect(undersized).toEqual([]);
 });
 
 test('detail panel becomes a full-width mobile dialog', async ({ page }, testInfo) => {

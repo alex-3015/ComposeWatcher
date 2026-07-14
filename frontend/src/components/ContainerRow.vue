@@ -2,7 +2,11 @@
 import { computed, ref, watch } from 'vue';
 import { ExternalLink, GitBranch, Package, PanelRightOpen } from '@lucide/vue';
 import type { ContainerSummary } from '../types';
-import { getContainerStatusPresentation, getUpstreamVersionLabel } from '../containerPresentation';
+import {
+  getContainerStatusPresentation,
+  getRepositoryActionLabel,
+  getUpstreamVersionLabel,
+} from '../containerPresentation';
 import { UI } from '../theme';
 import StatusBadge from './StatusBadge.vue';
 
@@ -15,6 +19,8 @@ const emit = defineEmits<{
 const iconFailed = ref(false);
 const presentation = computed(() => getContainerStatusPresentation(props.container));
 const upstreamVersion = computed(() => getUpstreamVersionLabel(props.container));
+const repositoryActionLabel = computed(() => getRepositoryActionLabel(props.container));
+const repositoryNeedsFix = computed(() => props.container.checkIssue?.code === 'repo-not-found');
 
 watch(
   () => props.container.iconUrl,
@@ -39,7 +45,7 @@ watch(
         <h3 :class="`${UI.textPrimary} text-sm font-medium truncate`">
           <button
             type="button"
-            class="truncate text-left rounded-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+            class="min-h-11 min-w-11 inline-flex max-w-full items-center truncate text-left rounded-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60"
             @click="emit('openDetail', container)"
           >
             {{ container.name }}
@@ -73,13 +79,13 @@ watch(
         {{ presentation.description }}
       </p>
     </div>
-    <div class="col-span-2 lg:col-span-1 flex items-center justify-end gap-2">
+    <div class="col-span-2 lg:col-span-1 flex flex-wrap items-center justify-end gap-2">
       <a
         v-if="container.releaseUrl"
         :href="container.releaseUrl"
         target="_blank"
         rel="noopener noreferrer"
-        :class="`${UI.textSecondary} hover:text-white inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
+        :class="`min-h-11 ${UI.textSecondary} hover:text-white inline-flex items-center gap-1 rounded-md px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
         aria-label="Open release"
         title="Open the upstream release on GitHub"
       >
@@ -87,17 +93,21 @@ watch(
       </a>
       <button
         type="button"
-        :class="`${UI.primaryText} ${UI.primaryTextHover} inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
-        :aria-label="`Edit GitHub repository for ${container.name}`"
-        :title="container.githubRepo ? `Edit ${container.githubRepo}` : 'Link a GitHub repository'"
+        :class="`min-h-11 inline-flex items-center gap-1 rounded-md px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/60 ${
+          repositoryNeedsFix
+            ? 'text-amber-300 bg-amber-500/10 hover:text-amber-200'
+            : `${UI.primaryText} ${UI.primaryTextHover}`
+        }`"
+        :aria-label="`${repositoryActionLabel} for ${container.name}`"
+        :title="container.githubRepo ? `Current repository: ${container.githubRepo}` : undefined"
         @click="emit('linkRepo', container)"
       >
         <GitBranch :size="14" aria-hidden="true" />
-        {{ container.githubRepo ? 'Repository' : 'Link repository' }}
+        {{ repositoryActionLabel }}
       </button>
       <button
         type="button"
-        :class="`${UI.primaryText} ${UI.primaryTextHover} bg-blue-500/10 border border-blue-500/20 inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
+        :class="`min-h-11 ${UI.primaryText} ${UI.primaryTextHover} bg-blue-500/10 border border-blue-500/20 inline-flex items-center gap-1 rounded-md px-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
         @click="emit('openDetail', container)"
       >
         <PanelRightOpen :size="14" aria-hidden="true" /> Details

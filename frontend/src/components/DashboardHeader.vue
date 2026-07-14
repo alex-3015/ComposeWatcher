@@ -21,8 +21,9 @@ const emit = defineEmits<{ refresh: [] }>();
         </div>
       </div>
       <button
+        type="button"
         :disabled="refreshing"
-        :class="`flex items-center gap-2 ${UI.inputBg} hover:bg-gray-700 disabled:opacity-50 border ${UI.borderSubtle} rounded-lg px-3 py-2 text-sm`"
+        :class="`min-h-11 flex items-center gap-2 ${UI.inputBg} hover:bg-gray-700 disabled:opacity-50 border ${UI.borderSubtle} rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
         @click="emit('refresh')"
       >
         <RefreshCw :size="14" :class="refreshing ? 'animate-spin' : ''" />

@@ -13,54 +13,67 @@ describe('useDashboardView', () => {
       summary({
         id: 'c',
         name: 'stale',
-        status: 'up-to-date',
+        status: 'unknown',
         dataState: 'stale',
         composeFile: 'infra/compose.yml',
       }),
-      summary({ id: 'd', name: 'current', status: 'ahead', image: 'custom/image:1' }),
+      summary({
+        id: 'd',
+        name: 'missing',
+        status: 'no-repo',
+        dataState: 'unlinked',
+        githubRepo: null,
+      }),
+      summary({
+        id: 'e',
+        name: 'rolling',
+        status: 'unknown',
+        dataState: 'fresh',
+        currentVersion: 'latest',
+        comparisonMode: 'unverifiable',
+        latestUpstreamVersion: null,
+      }),
+      summary({ id: 'f', name: 'current', status: 'ahead', image: 'custom/image:1' }),
     ]);
 
-  it('implements the five v3 filters', () => {
+  it('implements the seven action filters', () => {
     const view = useDashboardView(containers());
     expect(view.counts.value).toEqual({
-      all: 4,
+      all: 6,
       breaking: 1,
       updates: 1,
-      attention: 1,
-      current: 2,
+      'check-failed': 1,
+      'repository-missing': 1,
+      'not-comparable': 1,
+      current: 1,
     });
-    view.filter.value = 'attention';
+    view.filter.value = 'check-failed';
     expect(view.filtered.value.map((item) => item.name)).toEqual(['stale']);
   });
 
   it.each([
-    ['all', ['breaking', 'update', 'stale', 'current']],
+    ['all', ['breaking', 'update', 'stale', 'missing', 'rolling', 'current']],
     ['breaking', ['breaking']],
     ['updates', ['update']],
-    ['current', ['current', 'stale']],
+    ['check-failed', ['stale']],
+    ['repository-missing', ['missing']],
+    ['not-comparable', ['rolling']],
+    ['current', ['current']],
   ] as const)('applies the %s filter', (filter, expected) => {
     const view = useDashboardView(containers());
     view.filter.value = filter;
     expect(view.filtered.value.map((item) => item.name).sort()).toEqual([...expected].sort());
   });
 
-  it('treats unknown, no-repo, stale, and error records as attention', () => {
+  it('keeps pending checks out of failure filters', () => {
     const view = useDashboardView(
       ref([
-        summary({ id: 'a', name: 'unknown', status: 'unknown' }),
-        summary({ id: 'b', name: 'unlinked', status: 'no-repo', dataState: 'unlinked' }),
-        summary({ id: 'c', name: 'stale', status: 'up-to-date', dataState: 'stale' }),
-        summary({ id: 'd', name: 'error', status: 'up-to-date', dataState: 'error' }),
-        summary({ id: 'e', name: 'fresh', status: 'up-to-date' }),
+        summary({ id: 'a', name: 'pending', status: 'unknown', dataState: 'pending' }),
+        summary({ id: 'b', name: 'unknown', status: 'unknown', dataState: 'fresh' }),
       ]),
     );
-    view.filter.value = 'attention';
-    expect(view.filtered.value.map((item) => item.name)).toEqual([
-      'unknown',
-      'unlinked',
-      'error',
-      'stale',
-    ]);
+    view.filter.value = 'check-failed';
+    expect(view.filtered.value.map((item) => item.name)).toEqual(['unknown']);
   });
 
   it.each([

@@ -53,8 +53,24 @@ describe('ContainerCard', () => {
       },
       global: { stubs },
     });
-    expect(wrapper.get('[aria-label="Edit GitHub repository for sonarr"]').text()).toContain(
+    expect(wrapper.get('[aria-label="Link repository for sonarr"]').text()).toContain(
       'Link repository',
+    );
+  });
+
+  it('turns a missing repository check into a direct fix action', () => {
+    const wrapper = mount(ContainerCard, {
+      props: {
+        container: summary({
+          status: 'unknown',
+          dataState: 'error',
+          checkIssue: { code: 'repo-not-found', message: 'Missing', retryAt: null },
+        }),
+      },
+      global: { stubs },
+    });
+    expect(wrapper.get('[aria-label="Fix repository for sonarr"]').text()).toContain(
+      'Fix repository',
     );
   });
 
@@ -62,7 +78,7 @@ describe('ContainerCard', () => {
     const container = summary();
     const wrapper = mount(ContainerCard, { props: { container }, global: { stubs } });
     await wrapper.get('button').trigger('click');
-    await wrapper.get('[aria-label="Edit GitHub repository for sonarr"]').trigger('click');
+    await wrapper.get('[aria-label="Edit repository for sonarr"]').trigger('click');
     expect(wrapper.emitted('openDetail')?.[0]).toEqual([container]);
     expect(wrapper.emitted('linkRepo')?.[0]).toEqual([container]);
   });

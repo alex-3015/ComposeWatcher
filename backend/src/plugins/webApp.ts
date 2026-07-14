@@ -48,7 +48,19 @@ export async function registerWebApp(
   });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith('/api/')) {
+    const pathname = new URL(request.raw.url ?? request.url, 'http://localhost').pathname;
+    const isApiPath = pathname === '/api' || pathname.startsWith('/api/');
+    const isAssetPath =
+      pathname === '/icons' ||
+      pathname.startsWith('/icons/') ||
+      pathname === '/assets' ||
+      pathname.startsWith('/assets/') ||
+      /\/[^/]+\.[^/]+$/.test(pathname);
+    const acceptsHtml = request.headers.accept?.includes('text/html') ?? false;
+    const isHtmlNavigation = (request.method === 'GET' || request.method === 'HEAD') && acceptsHtml;
+
+    if (isApiPath || isAssetPath || !isHtmlNavigation) {
+      reply.header('Cache-Control', 'no-store');
       return reply.status(404).send({
         error: { code: 'NOT_FOUND', message: 'Resource not found.' },
       });

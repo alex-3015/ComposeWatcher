@@ -21,34 +21,36 @@ const searchQuery = defineModel<string>('searchQuery', { required: true });
         v-model="searchQuery"
         type="search"
         placeholder="Search name, image, repository, or Compose file…"
-        :class="`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${UI.inputBg} border ${UI.borderInput}`"
+        :class="`w-full min-h-11 pl-10 pr-4 py-2 rounded-lg text-sm placeholder:text-gray-400 ${UI.inputBg} border ${UI.borderInput}`"
       />
     </div>
     <select
       v-model="sortMode"
       aria-label="Sort containers"
-      :class="`${UI.inputBg} border ${UI.borderInput} rounded-lg px-3 py-2 text-sm`"
+      :class="`min-h-11 ${UI.inputBg} border ${UI.borderInput} rounded-lg px-3 py-2 text-sm`"
     >
       <option v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
         Sort: {{ option.label }}
       </option>
     </select>
     <div
-      :class="`inline-flex ${UI.inputBg} border ${UI.borderInput} rounded-lg p-1`"
+      :class="`inline-flex w-fit justify-self-start ${UI.inputBg} border ${UI.borderInput} rounded-lg p-1`"
       aria-label="Dashboard view"
     >
       <button
+        type="button"
         aria-label="Card view"
         :aria-pressed="viewMode === 'cards'"
-        :class="`p-1.5 rounded ${viewMode === 'cards' ? UI.primaryBg : UI.textSecondary}`"
+        :class="`min-h-11 min-w-11 inline-flex items-center justify-center rounded ${viewMode === 'cards' ? UI.primaryBg : UI.textSecondary}`"
         @click="viewMode = 'cards'"
       >
         <LayoutGrid :size="16" />
       </button>
       <button
+        type="button"
         aria-label="Compact view"
         :aria-pressed="viewMode === 'compact'"
-        :class="`p-1.5 rounded ${viewMode === 'compact' ? UI.primaryBg : UI.textSecondary}`"
+        :class="`min-h-11 min-w-11 inline-flex items-center justify-center rounded ${viewMode === 'compact' ? UI.primaryBg : UI.textSecondary}`"
         @click="viewMode = 'compact'"
       >
         <List :size="16" />
@@ -63,7 +65,7 @@ const searchQuery = defineModel<string>('searchQuery', { required: true });
       type="button"
       :aria-pressed="filter === option.value"
       :class="[
-        'inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border focus:outline-none focus:ring-2 focus:ring-blue-500/60',
+        'min-h-11 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border focus:outline-none focus:ring-2 focus:ring-blue-500/60',
         filter === option.value
           ? `${UI.primaryBg} border-blue-400 text-white`
           : `${UI.inputBg} ${UI.borderSubtle} ${UI.textSecondary} hover:border-gray-500`,

@@ -54,7 +54,7 @@ describe('ComposeGroup', () => {
     });
     expect(compact.text().match(/Image tag/g)).toHaveLength(1);
     expect(compact.text().match(/Upstream release/g)).toHaveLength(1);
-    await compact.get('[aria-label="Edit GitHub repository for sonarr"]').trigger('click');
+    await compact.get('[aria-label="Edit repository for sonarr"]').trigger('click');
     expect(compact.emitted('linkRepo')?.[0]).toEqual([containers[0]]);
   });
 });

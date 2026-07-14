@@ -18,6 +18,8 @@ export interface ContainerStatusPresentation {
   themeStatus: ContainerStatus;
 }
 
+export type ContainerAttentionCategory = 'check-failed' | 'repository-missing' | 'not-comparable';
+
 const ROLLING_TAGS = new Set(['latest', 'release', 'stable', 'edge', 'main', 'master', 'nightly']);
 
 function isClearlyUnverifiableTag(value: string): boolean {
@@ -30,12 +32,44 @@ function isClearlyUnverifiableTag(value: string): boolean {
   );
 }
 
-function isNotComparable(container: ContainerPresentationInput): boolean {
+export function isContainerNotComparable(container: ContainerPresentationInput): boolean {
   return (
     container.status === 'unknown' &&
     (isClearlyUnverifiableTag(container.currentVersion) ||
       container.checkIssue?.code === 'unverifiable-version')
   );
+}
+
+/** Returns the actionable attention category shown by the dashboard filters. */
+export function getContainerAttentionCategory(
+  container: ContainerPresentationInput,
+): ContainerAttentionCategory | null {
+  if (
+    container.status === 'no-repo' ||
+    container.dataState === 'unlinked' ||
+    !container.githubRepo
+  ) {
+    return 'repository-missing';
+  }
+  if (container.dataState === 'error' || container.dataState === 'stale') {
+    return 'check-failed';
+  }
+  if (isContainerNotComparable(container)) return 'not-comparable';
+  if (container.status === 'unknown' && container.dataState !== 'pending') return 'check-failed';
+  return null;
+}
+
+/** Labels repository actions by the next useful step instead of the stored mapping. */
+export function getRepositoryActionLabel(container: ContainerPresentationInput): string {
+  if (
+    container.status === 'no-repo' ||
+    container.dataState === 'unlinked' ||
+    !container.githubRepo
+  ) {
+    return 'Link repository';
+  }
+  if (container.checkIssue?.code === 'repo-not-found') return 'Fix repository';
+  return 'Edit repository';
 }
 
 function unverifiableDescription(container: ContainerPresentationInput): string {
@@ -84,7 +118,7 @@ export function getContainerStatusPresentation(
     };
   }
 
-  if (isNotComparable(container)) {
+  if (isContainerNotComparable(container)) {
     return {
       label: 'Not comparable',
       description: unverifiableDescription(container),
@@ -131,7 +165,7 @@ export function getUpstreamVersionLabel(container: ContainerPresentationInput): 
   if (container.status === 'no-repo' || container.dataState === 'unlinked') {
     return 'Repository required';
   }
-  if (isNotComparable(container)) return 'Not comparable';
+  if (isContainerNotComparable(container)) return 'Not comparable';
   if (container.dataState === 'error') return 'Check failed';
   return 'No release found';
 }

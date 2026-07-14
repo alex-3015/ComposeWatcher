@@ -13,7 +13,7 @@ v3 ersetzt die v2-API inkompatibel. Bestehende gültige Repository-Zuordnungen w
 - Ein GitHub-Request pro eindeutigem Repository mit begrenzter Parallelität, ETags und Rate-Limit-Backoff
 - Race-freie globale und gezielte Refreshes; eine neue Repository-Zuordnung kann nicht von einem alten Lauf überschrieben werden
 - Kompakte Listen-API und bei Bedarf geladene Release Notes, Diagnosen und Breaking-Change-Historie
-- Aktionsfilter: Alle, Breaking, Updates, Benötigt Aufmerksamkeit und Aktuell
+- Aktionsfilter: Alle, Breaking, Updates, Prüfung fehlgeschlagen, Repository fehlt, Nicht vergleichbar und Aktuell
 - Suche über Name, Image, Repository und Compose-Datei sowie Karten- und Kompaktansicht
 - Responsives Detailpanel mit Fokusfalle, Escape-Schließen, Fokuswiederherstellung und mobiler Vollbildansicht
 - Sichtbare Datenfrische (`pending`, `fresh`, `stale`, `error`, `unlinked`) und Vergleichssicherheit

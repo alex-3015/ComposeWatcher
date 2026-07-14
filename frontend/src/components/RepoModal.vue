@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { X, GitBranch } from '@lucide/vue';
 import type { ContainerSummary } from '../types';
 import { UI } from '../theme';
@@ -20,6 +20,11 @@ const error = ref('');
 const modal = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);
 let previouslyFocused: HTMLElement | null = null;
+const dialogTitle = computed(() => {
+  if (!props.container.githubRepo) return 'Link GitHub Repository';
+  if (props.container.checkIssue?.code === 'repo-not-found') return 'Fix GitHub Repository';
+  return 'Edit GitHub Repository';
+});
 
 const REPO_FORMAT = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
@@ -101,13 +106,14 @@ onBeforeUnmount(() => previouslyFocused?.focus());
         <div class="flex items-center gap-2">
           <GitBranch :size="18" :class="UI.primaryText" aria-hidden="true" />
           <h2 id="repo-modal-title" :class="`text-base font-semibold ${UI.textPrimary}`">
-            Link GitHub Repository
+            {{ dialogTitle }}
           </h2>
         </div>
         <button
           :disabled="saving"
+          type="button"
           aria-label="Close repository dialog"
-          :class="`${UI.textMuted} ${UI.textHover} disabled:opacity-50 transition-colors`"
+          :class="`h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-lg ${UI.textMuted} ${UI.textHover} disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
           @click="close"
         >
           <X :size="18" aria-hidden="true" />
@@ -136,7 +142,7 @@ onBeforeUnmount(() => previouslyFocused?.focus());
           placeholder="owner/repository"
           :aria-invalid="Boolean(error)"
           :aria-describedby="error ? 'repo-error' : undefined"
-          :class="`w-full ${UI.inputBg} border ${UI.borderInput} rounded-lg px-3 py-2.5 ${UI.textPrimary} placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-colors`"
+          :class="`w-full min-h-11 ${UI.inputBg} border ${UI.borderInput} rounded-lg px-3 py-2.5 ${UI.textPrimary} placeholder-gray-400 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-colors`"
           @input="error = ''"
           @keydown.enter="handleSave"
         />
@@ -146,25 +152,28 @@ onBeforeUnmount(() => previouslyFocused?.focus());
       </div>
 
       <!-- Actions -->
-      <div class="flex gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row">
         <button
+          type="button"
           :disabled="saving"
-          :class="`flex-1 ${UI.primaryBg} ${UI.primaryBgHover} disabled:opacity-50 ${UI.textPrimary} text-sm font-medium rounded-lg px-4 py-2.5 transition-colors`"
+          :class="`min-h-11 flex-1 ${UI.primaryBg} ${UI.primaryBgHover} disabled:opacity-50 ${UI.textPrimary} text-sm font-medium rounded-lg px-4 py-2.5 transition-colors`"
           @click="handleSave"
         >
           {{ saving ? 'Saving…' : 'Save' }}
         </button>
         <button
           v-if="container.githubRepo"
+          type="button"
           :disabled="saving"
-          :class="`px-4 py-2.5 text-sm ${UI.errorText} ${UI.errorTextHover} disabled:opacity-50 border ${UI.borderSubtle} rounded-lg transition-colors`"
+          :class="`min-h-11 px-4 py-2.5 text-sm ${UI.errorText} ${UI.errorTextHover} disabled:opacity-50 border ${UI.borderSubtle} rounded-lg transition-colors`"
           @click="handleRemove"
         >
           Remove
         </button>
         <button
+          type="button"
           :disabled="saving"
-          :class="`px-4 py-2.5 text-sm ${UI.textSecondary} ${UI.textHover} border ${UI.borderSubtle} rounded-lg transition-colors`"
+          :class="`min-h-11 px-4 py-2.5 text-sm ${UI.textSecondary} ${UI.textHover} border ${UI.borderSubtle} rounded-lg transition-colors`"
           @click="close"
         >
           Cancel

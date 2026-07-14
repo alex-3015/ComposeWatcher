@@ -30,32 +30,40 @@ const emit = defineEmits<{
     <button
       :aria-expanded="expanded"
       :aria-controls="groupId"
-      :class="`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${UI.cardBg} border ${UI.borderDefault} hover:border-gray-700 transition-colors mb-3`"
+      :class="`w-full min-h-11 flex items-start sm:items-center gap-3 px-4 py-3 rounded-lg ${UI.cardBg} border ${UI.borderDefault} hover:border-gray-700 transition-colors mb-3`"
       @click="emit('toggle')"
     >
       <ChevronDown
         :size="16"
-        :class="`${UI.textSecondary} transition-transform shrink-0 ${expanded ? '' : '-rotate-90'}`"
+        :class="`${UI.textSecondary} mt-0.5 sm:mt-0 transition-transform shrink-0 ${expanded ? '' : '-rotate-90'}`"
         aria-hidden="true"
       />
-      <FolderOpen :size="16" :class="`${UI.textSecondary} shrink-0`" aria-hidden="true" />
-      <span :class="`font-mono text-sm ${UI.textPrimary} truncate`">{{ composeFile }}</span>
-      <div class="flex items-center gap-2 ml-auto shrink-0">
-        <span
-          v-if="counts.breaking > 0"
-          class="text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5"
-        >
-          {{ counts.breaking }} breaking hint{{ counts.breaking !== 1 ? 's' : '' }}
+      <FolderOpen
+        :size="16"
+        :class="`${UI.textSecondary} mt-0.5 sm:mt-0 shrink-0`"
+        aria-hidden="true"
+      />
+      <div class="min-w-0 flex-1 text-left sm:flex sm:items-center sm:gap-3">
+        <span :class="`block font-mono text-sm ${UI.textPrimary} break-all sm:truncate`">
+          {{ composeFile }}
         </span>
-        <span
-          v-if="counts.updates > 0"
-          class="text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5"
-        >
-          {{ counts.updates }} update{{ counts.updates !== 1 ? 's' : '' }}
-        </span>
-        <span :class="`text-xs ${UI.textMuted}`">
-          {{ counts.total }} container{{ counts.total !== 1 ? 's' : '' }}
-        </span>
+        <div class="mt-2 flex flex-wrap items-center gap-2 sm:mt-0 sm:ml-auto sm:shrink-0">
+          <span
+            v-if="counts.breaking > 0"
+            class="text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5"
+          >
+            {{ counts.breaking }} breaking hint{{ counts.breaking !== 1 ? 's' : '' }}
+          </span>
+          <span
+            v-if="counts.updates > 0"
+            class="text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5"
+          >
+            {{ counts.updates }} update{{ counts.updates !== 1 ? 's' : '' }}
+          </span>
+          <span :class="`text-xs ${UI.textMuted}`">
+            {{ counts.total }} container{{ counts.total !== 1 ? 's' : '' }}
+          </span>
+        </div>
       </div>
     </button>
     <div

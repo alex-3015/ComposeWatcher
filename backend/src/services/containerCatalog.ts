@@ -29,6 +29,7 @@ export class ContainerCatalog implements ContainerCatalogApi {
   private containers: ContainerInfo[] = [];
   private refreshedAt: string | null = null;
   private githubRateLimit: GithubRateLimit | null = null;
+  private availableIcons = new Set<string>();
   private revision = 0;
   private stopped = false;
   private globalTask: RefreshTask | null = null;
@@ -47,11 +48,13 @@ export class ContainerCatalog implements ContainerCatalogApi {
   }
 
   async initialize(refreshOnStart = true): Promise<void> {
-    const [config, scanned, snapshot] = await Promise.all([
+    const [config, scanned, snapshot, availableIcons] = await Promise.all([
       this.dependencies.loadConfig(this.logger),
       this.dependencies.scan(this.logger),
       this.dependencies.loadSnapshot(this.logger),
+      this.dependencies.listIcons(),
     ]);
+    this.availableIcons = availableIcons;
     const mapped = applyRepositoryMappings(scanned, config);
     this.containers = snapshot ? mergeCatalogSnapshot(mapped, snapshot.containers) : mapped;
     if (snapshot) {
@@ -65,7 +68,7 @@ export class ContainerCatalog implements ContainerCatalogApi {
     if (this.shouldRevalidate()) this.startGlobalRefresh();
     return {
       data: this.containers.map((container) =>
-        toContainerSummary(container, this.isPending(container.id)),
+        toContainerSummary(container, this.isPending(container.id), this.availableIcons),
       ),
       meta: {
         refresh: this.refreshMeta(),
@@ -77,7 +80,7 @@ export class ContainerCatalog implements ContainerCatalogApi {
 
   detail(containerId: string) {
     const container = this.find(containerId);
-    return toContainerDetail(container, this.isPending(container.id));
+    return toContainerDetail(container, this.isPending(container.id), this.availableIcons);
   }
 
   startGlobalRefresh(): RefreshMeta {
@@ -116,7 +119,7 @@ export class ContainerCatalog implements ContainerCatalogApi {
       this.startTargetedRefresh(updated);
     } else await this.persistSnapshot();
     return {
-      data: toContainerSummary(updated, Boolean(repo)),
+      data: toContainerSummary(updated, Boolean(repo), this.availableIcons),
       meta: { refresh: this.refreshMeta() },
     };
   }
@@ -215,9 +218,7 @@ export class ContainerCatalog implements ContainerCatalogApi {
             this.replace(enriched);
             this.githubRateLimit = result.githubRateLimit;
             await this.persistSnapshot();
-            void this.dependencies.downloadIcons([enriched]).catch((error: unknown) => {
-              this.logger.warn({ error }, 'Icon download failed');
-            });
+            this.startIconDownload([enriched]);
           }
           this.finishSuccess('container', container.id, startedAt);
         })
@@ -237,9 +238,18 @@ export class ContainerCatalog implements ContainerCatalogApi {
     this.githubRateLimit = enrichment.githubRateLimit;
     this.refreshedAt = new Date().toISOString();
     await this.persistSnapshot();
-    void this.dependencies.downloadIcons(this.containers).catch((error: unknown) => {
-      this.logger.warn({ error }, 'Icon download failed');
-    });
+    this.startIconDownload(this.containers);
+  }
+
+  private startIconDownload(containers: ContainerInfo[]): void {
+    void this.dependencies
+      .downloadIcons(containers)
+      .then((fileNames) => {
+        for (const fileName of fileNames) this.availableIcons.add(fileName);
+      })
+      .catch((error: unknown) => {
+        this.logger.warn({ error }, 'Icon download failed');
+      });
   }
 
   private async persistSnapshot(): Promise<void> {

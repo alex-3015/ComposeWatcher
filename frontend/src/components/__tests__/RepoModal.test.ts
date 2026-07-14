@@ -36,6 +36,7 @@ describe('RepoModal – rendering', () => {
     expect(dialog.attributes('aria-modal')).toBe('true');
     expect(dialog.attributes('aria-labelledby')).toBe('repo-modal-title');
     expect(w.get('label').attributes('for')).toBe('github-repository');
+    expect(w.get('#repo-modal-title').text()).toBe('Link GitHub Repository');
     expect(w.get('button[aria-label="Close repository dialog"]').attributes('aria-label')).toBe(
       'Close repository dialog',
     );
@@ -49,6 +50,21 @@ describe('RepoModal – rendering', () => {
   it('displays the container image', () => {
     const w = mount(RepoModal, { props: { container: makeContainer() }, global: { stubs } });
     expect(w.text()).toContain('ghcr.io/linuxserver/sonarr');
+  });
+
+  it('uses a fix-oriented title for a missing repository mapping', () => {
+    const w = mount(RepoModal, {
+      props: {
+        container: makeContainer({
+          githubRepo: 'missing/repository',
+          status: 'unknown',
+          dataState: 'error',
+          checkIssue: { code: 'repo-not-found', message: 'Missing', retryAt: null },
+        }),
+      },
+      global: { stubs },
+    });
+    expect(w.get('#repo-modal-title').text()).toBe('Fix GitHub Repository');
   });
 
   it('pre-fills input with existing githubRepo', () => {

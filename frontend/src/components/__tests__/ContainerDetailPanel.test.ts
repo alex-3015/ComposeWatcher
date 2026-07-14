@@ -67,9 +67,26 @@ describe('ContainerDetailPanel', () => {
     });
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('linuxserver/sonarr'))!
+      .find((button) => button.text().includes('Edit repository'))!
       .trigger('click');
     expect(wrapper.emitted('editRepository')?.[0]).toEqual([summary()]);
+  });
+
+  it('offers a repository fix when the current mapping was not found', async () => {
+    const container = summary({
+      status: 'unknown',
+      dataState: 'error',
+      checkIssue: { code: 'repo-not-found', message: 'Missing', retryAt: null },
+    });
+    const wrapper = mount(ContainerDetailPanel, {
+      props: { container, detail: null, loading: false, error: null },
+      global: { stubs },
+    });
+    const action = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Fix repository'))!;
+    await action.trigger('click');
+    expect(wrapper.emitted('editRepository')?.[0]).toEqual([container]);
   });
 
   it('renders incomplete breaking history and wraps reverse keyboard focus', async () => {

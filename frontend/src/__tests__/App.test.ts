@@ -91,10 +91,11 @@ describe('v3 dashboard', () => {
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('Needs attention'))!
+      .find((button) => button.text().includes('Check failed'))!
       .trigger('click');
     expect(wrapper.text()).toContain('stale');
     expect(wrapper.text()).not.toContain('current');
+    expect(wrapper.get('[aria-label="Container filters"]').findAll('button')).toHaveLength(7);
 
     await wrapper
       .findAll('button')
@@ -179,7 +180,7 @@ describe('v3 dashboard', () => {
     );
     const wrapper = mount(App, { global });
     await flushPromises();
-    await wrapper.get('[aria-label="Edit GitHub repository for sonarr"]').trigger('click');
+    await wrapper.get('[aria-label="Edit repository for sonarr"]').trigger('click');
     await wrapper.get('#github-repository').setValue('custom/sonarr');
     await wrapper
       .findAll('button')

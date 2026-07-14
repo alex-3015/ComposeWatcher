@@ -63,4 +63,15 @@ describe('container projections', () => {
   it('keeps never-checked linked containers pending before refresh work is visible', () => {
     expect(toContainerSummary(container()).dataState).toBe('pending');
   });
+
+  it('publishes icon URLs only for files present in the catalog icon index', () => {
+    expect(toContainerSummary(container()).iconUrl).toBeNull();
+    expect(toContainerSummary(container(), false, new Set(['app.png'])).iconUrl).toBe(
+      '/icons/app.png',
+    );
+    expect(
+      toContainerSummary(container({ name: 'portainer-ce' }), false, new Set(['portainer.png']))
+        .iconUrl,
+    ).toBe('/icons/portainer.png');
+  });
 });

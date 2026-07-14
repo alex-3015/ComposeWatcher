@@ -23,9 +23,10 @@ const sanitizedHtml = computed(() => {
 <template>
   <div v-if="releaseNotes" :class="`border ${UI.borderDefault} rounded-lg overflow-hidden`">
     <button
+      type="button"
       :aria-expanded="expanded"
       :aria-controls="contentId"
-      :class="`w-full flex items-center gap-2 px-3 py-2 text-xs ${UI.textSecondary} hover:text-gray-200 transition-colors ${UI.inputBg}`"
+      :class="`w-full min-h-11 flex items-center gap-2 px-3 py-2 text-xs ${UI.textSecondary} hover:text-gray-200 transition-colors ${UI.inputBg}`"
       @click="expanded = !expanded"
     >
       <ChevronDown

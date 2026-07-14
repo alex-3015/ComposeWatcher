@@ -1,7 +1,15 @@
 import { computed, ref, watch } from 'vue';
 import type { ContainerStatus, ContainerSummary } from '../types';
+import { getContainerAttentionCategory } from '../containerPresentation';
 
-export type FilterMode = 'all' | 'breaking' | 'updates' | 'attention' | 'current';
+export type FilterMode =
+  | 'all'
+  | 'breaking'
+  | 'updates'
+  | 'check-failed'
+  | 'repository-missing'
+  | 'not-comparable'
+  | 'current';
 export type SortMode = 'priority' | 'name' | 'compose' | 'published';
 export type ViewMode = 'cards' | 'compact';
 
@@ -19,7 +27,9 @@ export const FILTER_OPTIONS: { value: FilterMode; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'breaking', label: 'Breaking' },
   { value: 'updates', label: 'Updates' },
-  { value: 'attention', label: 'Needs attention' },
+  { value: 'check-failed', label: 'Check failed' },
+  { value: 'repository-missing', label: 'Repository missing' },
+  { value: 'not-comparable', label: 'Not comparable' },
   { value: 'current', label: 'Current' },
 ];
 
@@ -36,12 +46,7 @@ function matchesFilter(container: ContainerSummary, filter: FilterMode): boolean
   if (filter === 'updates') return container.status === 'update-available';
   if (filter === 'current')
     return container.status === 'up-to-date' || container.status === 'ahead';
-  return (
-    container.status === 'unknown' ||
-    container.status === 'no-repo' ||
-    container.dataState === 'stale' ||
-    container.dataState === 'error'
-  );
+  return getContainerAttentionCategory(container) === filter;
 }
 
 function publishedTime(container: ContainerSummary): number {
@@ -117,7 +122,14 @@ export function useDashboardView(containers: { value: ContainerSummary[] }) {
     all: containers.value.length,
     breaking: containers.value.filter((container) => matchesFilter(container, 'breaking')).length,
     updates: containers.value.filter((container) => matchesFilter(container, 'updates')).length,
-    attention: containers.value.filter((container) => matchesFilter(container, 'attention')).length,
+    'check-failed': containers.value.filter((container) => matchesFilter(container, 'check-failed'))
+      .length,
+    'repository-missing': containers.value.filter((container) =>
+      matchesFilter(container, 'repository-missing'),
+    ).length,
+    'not-comparable': containers.value.filter((container) =>
+      matchesFilter(container, 'not-comparable'),
+    ).length,
     current: containers.value.filter((container) => matchesFilter(container, 'current')).length,
   }));
 

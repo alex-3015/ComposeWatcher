@@ -54,6 +54,11 @@ describe('UI constants', () => {
       expect(value, `UI.${key}`).not.toMatch(/[<>"'&]/);
     }
   });
+
+  it('keeps the dimmest small text at the accessible gray-400 contrast', () => {
+    expect(UI.textFaint).toBe('text-gray-400');
+    expect(UI.textDim).toBe('text-gray-400');
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────

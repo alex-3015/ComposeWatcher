@@ -3,7 +3,11 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { X, ExternalLink, GitBranch, AlertTriangle, LoaderCircle } from '@lucide/vue';
 import type { ContainerDetail, ContainerSummary } from '../types';
 import StatusBadge from './StatusBadge.vue';
-import { getContainerStatusPresentation, getUpstreamVersionLabel } from '../containerPresentation';
+import {
+  getContainerStatusPresentation,
+  getRepositoryActionLabel,
+  getUpstreamVersionLabel,
+} from '../containerPresentation';
 import { UI } from '../theme';
 import { formatExactDate, formatRelativeTime } from '../format';
 
@@ -26,6 +30,8 @@ let previouslyFocused: HTMLElement | null = null;
 const visible = computed(() => props.detail ?? props.container);
 const presentation = computed(() => getContainerStatusPresentation(visible.value));
 const upstreamVersion = computed(() => getUpstreamVersionLabel(visible.value));
+const repositoryActionLabel = computed(() => getRepositoryActionLabel(visible.value));
+const repositoryNeedsFix = computed(() => visible.value.checkIssue?.code === 'repo-not-found');
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
@@ -79,8 +85,9 @@ onBeforeUnmount(() => previouslyFocused?.focus());
         <StatusBadge :container="visible" />
         <button
           ref="closeButton"
+          type="button"
           aria-label="Close details"
-          :class="`${UI.textSecondary} ${UI.textHover} p-1`"
+          :class="`h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-lg ${UI.textSecondary} ${UI.textHover} focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
           @click="emit('close')"
         >
           <X :size="20" aria-hidden="true" />
@@ -112,6 +119,10 @@ onBeforeUnmount(() => previouslyFocused?.focus());
           <p>
             Comparison: <span :class="UI.textPrimary">{{ visible.comparisonMode }}</span>
           </p>
+          <p>
+            Repository:
+            <span :class="UI.textPrimary">{{ visible.githubRepo ?? 'Not linked' }}</span>
+          </p>
           <p v-if="visible.lastChecked" :title="formatExactDate(visible.lastChecked)">
             Checked:
             <span :class="UI.textPrimary">{{ formatRelativeTime(visible.lastChecked) }}</span>
@@ -135,7 +146,13 @@ onBeforeUnmount(() => previouslyFocused?.focus());
           class="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"
         >
           <p>{{ error }}</p>
-          <button class="mt-2 underline" @click="emit('retry', container)">Try again</button>
+          <button
+            type="button"
+            class="mt-2 min-h-11 rounded px-2 underline"
+            @click="emit('retry', container)"
+          >
+            Try again
+          </button>
         </div>
 
         <template v-else-if="detail">
@@ -149,7 +166,7 @@ onBeforeUnmount(() => previouslyFocused?.focus());
               :href="change.releaseUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="block rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300 hover:text-red-200"
+              class="min-h-11 block rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300 hover:text-red-200"
             >
               <strong>{{ change.version }}</strong> — {{ change.reason }}
             </a>
@@ -166,14 +183,19 @@ onBeforeUnmount(() => previouslyFocused?.focus());
             :href="visible.releaseUrl"
             target="_blank"
             rel="noopener noreferrer"
-            :class="`inline-flex items-center gap-1 text-sm ${UI.primaryText} ${UI.primaryTextHover}`"
+            :class="`min-h-11 inline-flex items-center gap-1 rounded-md px-2 text-sm ${UI.primaryText} ${UI.primaryTextHover}`"
             ><ExternalLink :size="14" /> Open release</a
           >
           <button
-            :class="`inline-flex items-center gap-1 text-sm ${UI.primaryText} ${UI.primaryTextHover}`"
+            type="button"
+            :class="`min-h-11 inline-flex items-center gap-1 rounded-md px-2 text-sm ${
+              repositoryNeedsFix
+                ? 'text-amber-300 bg-amber-500/10 hover:text-amber-200'
+                : `${UI.primaryText} ${UI.primaryTextHover}`
+            }`"
             @click="emit('editRepository', container)"
           >
-            <GitBranch :size="14" /> {{ visible.githubRepo ?? 'Link repository' }}
+            <GitBranch :size="14" /> {{ repositoryActionLabel }}
           </button>
         </div>
       </div>

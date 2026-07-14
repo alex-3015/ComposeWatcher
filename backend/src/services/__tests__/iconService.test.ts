@@ -72,6 +72,16 @@ describe('icon service', () => {
     await expect(iconExistsLocally('radarr')).resolves.toBe(false);
   });
 
+  it('indexes only locally available PNG files', async () => {
+    await fs.mkdir(path.join(dataDirectory, 'icons', 'nested'), { recursive: true });
+    await Promise.all([
+      fs.writeFile(path.join(dataDirectory, 'icons', 'sonarr.png'), 'png'),
+      fs.writeFile(path.join(dataDirectory, 'icons', 'notes.txt'), 'text'),
+    ]);
+    const { listLocalIconFileNames } = await subject();
+    await expect(listLocalIconFileNames()).resolves.toEqual(new Set(['sonarr.png']));
+  });
+
   it('downloads an image atomically', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
     const { downloadIcon } = await subject();
@@ -79,6 +89,18 @@ describe('icon service', () => {
     await expect(fs.readFile(path.join(dataDirectory, 'icons', 'sonarr.png'))).resolves.toEqual(
       Buffer.from([1, 2, 3]),
     );
+  });
+
+  it('coalesces concurrent downloads for the same icon', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetchMock);
+    const { downloadIcon } = await subject();
+
+    await expect(Promise.all([downloadIcon('sonarr'), downloadIcon('sonarr')])).resolves.toEqual([
+      true,
+      true,
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects non-images and oversized payloads', async () => {
@@ -93,7 +115,11 @@ describe('icon service', () => {
     const fetchMock = vi.fn().mockResolvedValue(response());
     vi.stubGlobal('fetch', fetchMock);
     const { downloadIconsForContainers } = await subject();
-    await downloadIconsForContainers([container('portainer-ce'), container('portainer-ee')]);
+    const available = await downloadIconsForContainers([
+      container('portainer-ce'),
+      container('portainer-ee'),
+    ]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(available).toEqual(new Set(['portainer.png']));
   });
 });

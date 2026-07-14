@@ -9,7 +9,7 @@ import { loadCachedContainers, saveCachedContainers } from './cacheService.js';
 import { loadConfig, setRepoMapping } from './configService.js';
 import { scanDockerDir } from './dockerService.js';
 import { enrichWithGithubData } from './githubService.js';
-import { downloadIconsForContainers } from './iconService.js';
+import { downloadIconsForContainers, listLocalIconFileNames } from './iconService.js';
 
 export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 export const BACKGROUND_RETRY_MS = 30_000;
@@ -43,6 +43,7 @@ export interface ContainerCatalogDependencies {
   setRepoMapping: typeof setRepoMapping;
   loadSnapshot: typeof loadCachedContainers;
   saveSnapshot: typeof saveCachedContainers;
+  listIcons: typeof listLocalIconFileNames;
   downloadIcons: typeof downloadIconsForContainers;
 }
 
@@ -53,6 +54,7 @@ export const defaultCatalogDependencies: ContainerCatalogDependencies = {
   setRepoMapping,
   loadSnapshot: loadCachedContainers,
   saveSnapshot: saveCachedContainers,
+  listIcons: listLocalIconFileNames,
   downloadIcons: downloadIconsForContainers,
 };
 

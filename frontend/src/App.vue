@@ -166,7 +166,7 @@ onBeforeUnmount(() => {
       <div
         v-if="loading"
         role="status"
-        class="flex items-center justify-center py-24 text-gray-500"
+        class="flex items-center justify-center py-24 text-gray-400"
       >
         <RefreshCw :size="20" class="animate-spin mr-2" /> Scanning containers…
       </div>
@@ -176,19 +176,21 @@ onBeforeUnmount(() => {
         class="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-red-300"
       >
         <p>Error loading containers: {{ error }}</p>
-        <button class="mt-3 underline" @click="loadDashboard()">Try again</button>
+        <button class="mt-3 min-h-11 rounded px-3 underline" @click="loadDashboard()">
+          Try again
+        </button>
       </div>
-      <div v-else-if="!containers.length" class="text-center py-24 text-gray-500">
+      <div v-else-if="!containers.length" class="text-center py-24 text-gray-400">
         No containers found. Mount a directory containing Compose files at <code>/docker</code>.
       </div>
-      <div v-else-if="!filtered.length" class="text-center py-16 text-gray-500">
+      <div v-else-if="!filtered.length" class="text-center py-16 text-gray-400">
         No containers match this view.
       </div>
       <template v-else>
         <div v-if="grouped.length > 1" class="flex justify-end gap-3 mb-3">
           <button
             type="button"
-            :class="`text-xs ${UI.textSecondary} ${UI.textHover} rounded focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
+            :class="`min-h-11 px-2 text-xs ${UI.textSecondary} ${UI.textHover} rounded focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
             @click="
               setGroupsExpanded(
                 grouped.map((group) => group.composeFile),
@@ -200,7 +202,7 @@ onBeforeUnmount(() => {
           </button>
           <button
             type="button"
-            :class="`text-xs ${UI.textSecondary} ${UI.textHover} rounded focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
+            :class="`min-h-11 px-2 text-xs ${UI.textSecondary} ${UI.textHover} rounded focus:outline-none focus:ring-2 focus:ring-blue-500/60`"
             @click="
               setGroupsExpanded(
                 grouped.map((group) => group.composeFile),

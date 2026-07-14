@@ -2,6 +2,8 @@ import type { ContainerDetail, ContainerSummary, DataState } from '@composewatch
 import type { ContainerInfo } from '../types.js';
 import { getIconFileName } from '../services/iconService.js';
 
+const NO_ICONS: ReadonlySet<string> = new Set();
+
 function getDataState(container: ContainerInfo, pending: boolean): DataState {
   if (!container.githubRepo) return 'unlinked';
   if (pending) return 'pending';
@@ -12,7 +14,11 @@ function getDataState(container: ContainerInfo, pending: boolean): DataState {
 }
 
 /** Projects the internal enrichment model into the public detail contract. */
-export function toContainerDetail(container: ContainerInfo, pending = false): ContainerDetail {
+export function toContainerDetail(
+  container: ContainerInfo,
+  pending = false,
+  availableIcons: ReadonlySet<string> = NO_ICONS,
+): ContainerDetail {
   const iconFileName = getIconFileName(container.name);
   return {
     id: container.id,
@@ -21,7 +27,10 @@ export function toContainerDetail(container: ContainerInfo, pending = false): Co
     currentVersion: container.currentVersion,
     composeFile: container.composeFile,
     githubRepo: container.githubRepo,
-    iconUrl: iconFileName ? `/icons/${encodeURIComponent(iconFileName)}` : null,
+    iconUrl:
+      iconFileName && availableIcons.has(iconFileName)
+        ? `/icons/${encodeURIComponent(iconFileName)}`
+        : null,
     latestUpstreamVersion: container.latestUpstreamVersion,
     publishedAt: container.publishedAt,
     status: container.status,
@@ -40,8 +49,14 @@ export function toContainerDetail(container: ContainerInfo, pending = false): Co
 }
 
 /** Removes large release fields from a detail object for collection responses. */
-export function toContainerSummary(container: ContainerInfo, pending = false): ContainerSummary {
-  const detail: Partial<ContainerDetail> = { ...toContainerDetail(container, pending) };
+export function toContainerSummary(
+  container: ContainerInfo,
+  pending = false,
+  availableIcons: ReadonlySet<string> = NO_ICONS,
+): ContainerSummary {
+  const detail: Partial<ContainerDetail> = {
+    ...toContainerDetail(container, pending, availableIcons),
+  };
   delete detail.historyComplete;
   delete detail.releaseName;
   delete detail.releaseNotes;

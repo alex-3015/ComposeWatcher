@@ -46,10 +46,26 @@ describe('ContainerRow', () => {
     expect(wrapper.text()).not.toContain('—');
   });
 
+  it('shows a direct repository fix action when the mapping cannot be found', () => {
+    const wrapper = mount(ContainerRow, {
+      props: {
+        container: summary({
+          status: 'unknown',
+          dataState: 'error',
+          checkIssue: { code: 'repo-not-found', message: 'Missing', retryAt: null },
+        }),
+      },
+      global: { stubs },
+    });
+    expect(wrapper.get('[aria-label="Fix repository for sonarr"]').text()).toContain(
+      'Fix repository',
+    );
+  });
+
   it('emits detail and repository actions', async () => {
     const container = summary();
     const wrapper = mount(ContainerRow, { props: { container }, global: { stubs } });
-    await wrapper.get('button[aria-label="Edit GitHub repository for sonarr"]').trigger('click');
+    await wrapper.get('button[aria-label="Edit repository for sonarr"]').trigger('click');
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('Details'))!

@@ -3,7 +3,11 @@ import { computed, ref, watch } from 'vue';
 import { ExternalLink, GitBranch, AlertTriangle, Package, PanelRightOpen } from '@lucide/vue';
 import type { ContainerSummary } from '../types';
 import StatusBadge from './StatusBadge.vue';
-import { getContainerStatusPresentation, getUpstreamVersionLabel } from '../containerPresentation';
+import {
+  getContainerStatusPresentation,
+  getRepositoryActionLabel,
+  getUpstreamVersionLabel,
+} from '../containerPresentation';
 import { STATUS_THEME, UI } from '../theme';
 import { formatExactDate, formatRelativeTime } from '../format';
 
@@ -25,6 +29,8 @@ const hasUpdate = computed(
 );
 const presentation = computed(() => getContainerStatusPresentation(props.container));
 const upstreamVersion = computed(() => getUpstreamVersionLabel(props.container));
+const repositoryActionLabel = computed(() => getRepositoryActionLabel(props.container));
+const repositoryNeedsFix = computed(() => props.container.checkIssue?.code === 'repo-not-found');
 const cardClass = computed(() => {
   const status = STATUS_THEME[props.container.status];
   if (props.container.status === 'breaking-change')
@@ -124,7 +130,7 @@ const cardClass = computed(() => {
     <div :class="`mt-auto flex flex-col gap-2 pt-3 border-t ${UI.borderDefault}`">
       <button
         type="button"
-        :class="`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm ${UI.primaryBg} ${UI.primaryBgHover}`"
+        :class="`min-h-11 inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm ${UI.primaryBg} ${UI.primaryBgHover}`"
         @click="emit('openDetail', container)"
       >
         <PanelRightOpen :size="14" aria-hidden="true" /> View details
@@ -135,17 +141,29 @@ const cardClass = computed(() => {
           :href="container.releaseUrl"
           target="_blank"
           rel="noopener noreferrer"
-          :class="`flex items-center gap-1 text-xs ${UI.textSecondary} hover:text-white`"
+          :class="`min-h-11 inline-flex items-center gap-1 rounded-md px-2 text-xs ${UI.textSecondary} hover:text-white`"
         >
           <ExternalLink :size="12" aria-hidden="true" /> Release
         </a>
         <button
-          :aria-label="`Edit GitHub repository for ${container.name}`"
-          :class="`flex items-center gap-1 text-xs ${UI.primaryText} ${UI.primaryTextHover} ml-auto max-w-[160px]`"
+          type="button"
+          :aria-label="`${repositoryActionLabel} for ${container.name}`"
+          :title="container.githubRepo ? `Current repository: ${container.githubRepo}` : undefined"
+          :class="`min-h-11 inline-flex items-center gap-1 rounded-md px-2 text-xs ml-auto max-w-[160px] ${
+            repositoryNeedsFix
+              ? 'text-amber-300 bg-amber-500/10 hover:text-amber-200'
+              : `${UI.primaryText} ${UI.primaryTextHover}`
+          }`"
           @click="emit('linkRepo', container)"
         >
           <GitBranch :size="12" class="shrink-0" aria-hidden="true" />
-          <span class="truncate">{{ container.githubRepo ?? 'Link repository' }}</span>
+          <span class="truncate">
+            {{
+              repositoryNeedsFix
+                ? repositoryActionLabel
+                : (container.githubRepo ?? repositoryActionLabel)
+            }}
+          </span>
         </button>
       </div>
       <p

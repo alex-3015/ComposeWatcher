@@ -49,7 +49,8 @@ function dependencies(overrides: Partial<ContainerCatalogDependencies> = {}) {
       githubRateLimit: null,
     }),
     saveSnapshot: vi.fn().mockResolvedValue(undefined),
-    downloadIcons: vi.fn().mockResolvedValue(undefined),
+    listIcons: vi.fn().mockResolvedValue(new Set<string>()),
+    downloadIcons: vi.fn().mockResolvedValue(new Set<string>()),
     ...overrides,
   } as ContainerCatalogDependencies;
 }
@@ -65,6 +66,42 @@ describe('ContainerCatalog', () => {
     expect(response.data[0]).not.toHaveProperty('releaseNotes');
     expect(response.data[0].dataState).toBe('pending');
     expect(deps.enrich).not.toHaveBeenCalled();
+    await catalog.close();
+  });
+
+  it('projects URLs only for icons present in the startup index', async () => {
+    const first = container();
+    const second = container({ id: 'compose.yml::database', name: 'database' });
+    const deps = dependencies({
+      scan: vi.fn().mockResolvedValue([first, second]),
+      loadSnapshot: vi.fn().mockResolvedValue({
+        schemaVersion: 4,
+        containers: [first, second],
+        ts: Date.now(),
+        refreshedAt: new Date().toISOString(),
+        githubRateLimit: null,
+      }),
+      listIcons: vi.fn().mockResolvedValue(new Set(['app.png'])),
+    });
+    const catalog = new ContainerCatalog(logger, deps);
+    await catalog.initialize(false);
+    expect(catalog.list().data.map(({ name, iconUrl }) => ({ name, iconUrl }))).toEqual([
+      { name: 'app', iconUrl: '/icons/app.png' },
+      { name: 'database', iconUrl: null },
+    ]);
+    await catalog.close();
+  });
+
+  it('adds successfully downloaded icons to later projections', async () => {
+    const deps = dependencies({
+      downloadIcons: vi.fn().mockResolvedValue(new Set(['app.png'])),
+    });
+    const catalog = new ContainerCatalog(logger, deps);
+    await catalog.initialize(false);
+    expect(catalog.list().data[0].iconUrl).toBeNull();
+    catalog.startGlobalRefresh();
+    await vi.waitFor(() => expect(catalog.list().meta.refresh.state).toBe('idle'));
+    await vi.waitFor(() => expect(catalog.list().data[0].iconUrl).toBe('/icons/app.png'));
     await catalog.close();
   });
 

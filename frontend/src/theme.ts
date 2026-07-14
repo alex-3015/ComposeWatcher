@@ -15,8 +15,8 @@ export const UI = {
   textPrimary: 'text-white',
   textSecondary: 'text-gray-300',
   textMuted: 'text-gray-400',
-  textFaint: 'text-gray-500',
-  textDim: 'text-gray-500',
+  textFaint: 'text-gray-400',
+  textDim: 'text-gray-400',
   textHover: 'hover:text-gray-300',
 
   primaryText: 'text-blue-400',

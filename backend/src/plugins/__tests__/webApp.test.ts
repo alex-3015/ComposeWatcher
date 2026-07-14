@@ -38,6 +38,8 @@ describe('web app plugin', () => {
     await Promise.all([
       fs.writeFile(path.join(webRoot, 'index.html'), '<main>Compose Watcher</main>'),
       fs.writeFile(path.join(webRoot, 'assets', 'app.js'), 'console.log("v3")'),
+      fs.writeFile(path.join(webRoot, 'favicon.svg'), '<svg/>'),
+      fs.writeFile(path.join(webRoot, 'manifest.webmanifest'), '{"name":"Compose Watcher"}'),
       fs.writeFile(path.join(dataRoot, 'icons', 'app.svg'), '<svg/>'),
     ]);
 
@@ -47,14 +49,37 @@ describe('web app plugin', () => {
     const index = await app.inject('/');
     const asset = await app.inject('/assets/app.js');
     const icon = await app.inject('/icons/app.svg');
-    const fallback = await app.inject('/containers/app');
+    const favicon = await app.inject('/favicon.svg');
+    const manifest = await app.inject('/manifest.webmanifest');
+    const fallback = await app.inject({
+      method: 'GET',
+      url: '/containers/app',
+      headers: { accept: 'text/html' },
+    });
+    const nonNavigation = await app.inject('/containers/app');
+    const missingIcon = await app.inject('/icons/missing.png');
+    const missingAsset = await app.inject('/assets/missing.js');
+    const missingFile = await app.inject({
+      method: 'GET',
+      url: '/favicon-missing.ico',
+      headers: { accept: 'text/html' },
+    });
+    const apiRoot = await app.inject('/api');
     const apiMissing = await app.inject('/api/missing');
 
     expect(index.body).toContain('Compose Watcher');
     expect(index.headers['cache-control']).toBe('no-cache');
     expect(asset.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(icon.headers['cache-control']).toBe('public, max-age=604800');
+    expect(favicon.headers['content-type']).toContain('image/svg+xml');
+    expect(manifest.headers['content-type']).toContain('application/manifest+json');
     expect(fallback.body).toContain('Compose Watcher');
+    for (const missing of [nonNavigation, missingIcon, missingAsset, missingFile]) {
+      expect(missing.statusCode).toBe(404);
+      expect(missing.headers['cache-control']).toBe('no-store');
+      expect(missing.body).not.toContain('Compose Watcher');
+    }
+    expect(apiRoot.statusCode).toBe(404);
     expect(apiMissing.json()).toEqual({
       error: { code: 'NOT_FOUND', message: 'Resource not found.' },
     });

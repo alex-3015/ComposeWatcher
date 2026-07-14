@@ -61,7 +61,7 @@ Container IDs are `<relative-compose-path>::<service-name>` and URL-encoded in r
 
 The initial collection must not contain release notes or breaking-change objects. `ContainerDetailPanel` triggers the detail request and lazy-loads `ReleaseNotes.vue`; this keeps `marked` and DOMPurify out of the initial chunk. Preserve focus trap, Escape close, focus restoration, and full-width mobile behavior.
 
-Search covers name, image, repository, and Compose file. Filters are `all`, `breaking`, `updates`, `attention`, and `current`. Do not add persistent triage state.
+Search covers name, image, repository, and Compose file. Filters are `all`, `breaking`, `updates`, `check-failed`, `repository-missing`, `not-comparable`, and `current`. Do not add persistent triage state.
 
 ### Tests and budgets
 
