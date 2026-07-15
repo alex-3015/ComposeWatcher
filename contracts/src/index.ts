@@ -169,6 +169,22 @@ export const ContainersResponseSchema = Type.Object(
 );
 export type ContainersResponse = Type.Static<typeof ContainersResponseSchema>;
 
+export const HomepageWidgetDataSchema = Type.Object(
+  {
+    breaking: Type.Integer({ minimum: 0 }),
+    updates: Type.Integer({ minimum: 0 }),
+    checkFailed: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type HomepageWidgetData = Type.Static<typeof HomepageWidgetDataSchema>;
+
+export const HomepageWidgetResponseSchema = Type.Object(
+  { data: HomepageWidgetDataSchema },
+  { additionalProperties: false },
+);
+export type HomepageWidgetResponse = Type.Static<typeof HomepageWidgetResponseSchema>;
+
 export const ContainerDetailResponseSchema = Type.Object(
   { data: ContainerDetailSchema },
   { additionalProperties: false },

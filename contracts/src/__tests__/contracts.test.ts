@@ -11,6 +11,7 @@ import {
   DataStateSchema,
   ErrorResponseSchema,
   HealthResponseSchema,
+  HomepageWidgetResponseSchema,
   RefreshMetaSchema,
   RefreshResponseSchema,
   RepositoryBodySchema,
@@ -161,8 +162,34 @@ describe('refresh metadata contract', () => {
   });
 });
 
+describe('Homepage widget contract', () => {
+  const response = { data: { breaking: 1, updates: 2, checkFailed: 3 } };
+
+  it('accepts non-negative aggregate counts', () => {
+    expect(Check(HomepageWidgetResponseSchema, response)).toBe(true);
+  });
+
+  it.each([
+    ['breaking', -1],
+    ['updates', 1.5],
+    ['checkFailed', '3'],
+    ['extra', 0],
+  ])('rejects malformed count field %s', (field, value) => {
+    expect(
+      Check(HomepageWidgetResponseSchema, {
+        data: { ...response.data, [field]: value },
+      }),
+    ).toBe(false);
+  });
+});
+
 const responses = [
   ['containers', ContainersResponseSchema, { data: [summary], meta }],
+  [
+    'Homepage widget',
+    HomepageWidgetResponseSchema,
+    { data: { breaking: 1, updates: 2, checkFailed: 3 } },
+  ],
   ['detail', ContainerDetailResponseSchema, { data: detail }],
   ['refresh', RefreshResponseSchema, { data: refresh }],
   ['repository', RepositoryResponseSchema, { data: summary, meta: { refresh } }],

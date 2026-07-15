@@ -75,6 +75,28 @@ Die Liste enthält bewusst keine Release Notes, keine Breaking-Change-Objekte un
 
 Eine unbekannte ID liefert HTTP 404 mit `CONTAINER_NOT_FOUND`.
 
+## Homepage-Widget
+
+`GET /api/homepage`
+
+Der Endpunkt liefert ausschließlich die drei aggregierten Zähler für das `customapi`-Widget von [Homepage](https://gethomepage.dev/widgets/services/customapi/):
+
+```json
+{
+  "data": {
+    "breaking": 2,
+    "updates": 5,
+    "checkFailed": 1
+  }
+}
+```
+
+- `breaking` zählt Container mit dem Status `breaking-change`.
+- `updates` zählt Container mit dem Status `update-available`; Breaking Updates sind nicht zusätzlich enthalten.
+- `checkFailed` zählt Container mit fehlgeschlagenen (`error`) oder veralteten (`stale`) Prüfdaten.
+
+Die Antwort wird aus dem aktuellen In-Memory-Katalog erzeugt und wartet nicht auf GitHub. Ist der Katalog veraltet, startet wie bei der Containerliste eine Aktualisierung im Hintergrund.
+
 ## Refresh
 
 `POST /api/refresh` hat keinen Body. Die Antwort ist HTTP 202:

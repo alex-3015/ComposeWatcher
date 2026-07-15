@@ -1,9 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  type ContainerSummary,
   ContainerDetailResponseSchema,
   ContainersResponseSchema,
   ErrorResponseSchema,
   HealthResponseSchema,
+  type HomepageWidgetData,
+  HomepageWidgetResponseSchema,
   RefreshResponseSchema,
   RepositoryBodySchema,
   RepositoryResponseSchema,
@@ -21,6 +24,20 @@ const containerIdParamsSchema = {
 
 function publicError(code: string, message: string) {
   return { error: { code, message } };
+}
+
+function homepageWidgetData(containers: readonly ContainerSummary[]): HomepageWidgetData {
+  return containers.reduce<HomepageWidgetData>(
+    (counts, container) => {
+      if (container.status === 'breaking-change') counts.breaking += 1;
+      if (container.status === 'update-available') counts.updates += 1;
+      if (container.dataState === 'error' || container.dataState === 'stale') {
+        counts.checkFailed += 1;
+      }
+      return counts;
+    },
+    { breaking: 0, updates: 0, checkFailed: 0 },
+  );
 }
 
 /** Registers the complete v3 HTTP API against a catalog instance. */
@@ -58,6 +75,19 @@ export async function registerApiRoutes(
       },
     },
     async () => catalog.list(),
+  );
+
+  app.get(
+    '/api/homepage',
+    {
+      schema: {
+        response: {
+          200: HomepageWidgetResponseSchema,
+          500: ErrorResponseSchema,
+        },
+      },
+    },
+    async () => ({ data: homepageWidgetData(catalog.list().data) }),
   );
 
   app.get<{ Params: { id: string } }>(

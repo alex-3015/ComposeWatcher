@@ -10,6 +10,7 @@ Compose Watcher is a self-hosted dashboard that scans Docker Compose files and c
 - Resolves image variables from the `.env` file next to each Compose file
 - Detects GitHub repositories automatically and supports manual mappings
 - Shows update status, breaking changes, release notes, and data freshness
+- Exposes aggregate update counts for a Homepage custom API widget
 - Provides search, filters, compact and card views, and a responsive detail panel
 - Caches results and refreshes GitHub data in the background
 
@@ -57,6 +58,33 @@ npm run dev:mock --workspace @composewatcher/frontend
 ```
 
 See [docs/API.md](docs/API.md) for the v3 API.
+
+## Homepage widget
+
+Compose Watcher exposes `GET /api/homepage` for Homepage's `customapi` service widget. Add the following widget to the existing Compose Watcher entry in `services.yaml`:
+
+```yaml
+- Monitoring & Betrieb:
+    - Compose Watcher:
+        icon: compose-watcher.png
+        href: https://composewatcher.example.com
+        widget:
+          type: customapi
+          url: http://composewatcher:8080/api/homepage
+          refreshInterval: 30000
+          mappings:
+            - field: data.breaking
+              label: Breaking
+              format: number
+            - field: data.updates
+              label: Updates
+              format: number
+            - field: data.checkFailed
+              label: Check failed
+              format: number
+```
+
+Use the browser-reachable Compose Watcher URL for `href`. The widget `url` is requested by the Homepage server, so use the Compose Watcher container name and port when both applications share a Docker network, or a host/IP address such as `http://192.168.1.10:8555/api/homepage` otherwise. No CORS setting is required for Homepage's server-side proxy.
 
 ## License
 

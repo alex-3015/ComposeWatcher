@@ -117,6 +117,40 @@ describe('v3 API', () => {
     await server.close();
   });
 
+  it('returns the three aggregate counts used by the Homepage widget', async () => {
+    vi.mocked(fakeCatalog.list).mockReturnValue({
+      data: [
+        summary({ id: 'breaking', status: 'breaking-change' }),
+        summary({ id: 'update', status: 'update-available' }),
+        summary({ id: 'error', status: 'unknown', dataState: 'error' }),
+        summary({ id: 'stale', status: 'up-to-date', dataState: 'stale' }),
+        summary({ id: 'current', status: 'up-to-date' }),
+      ],
+      meta: { refresh: idleRefresh, refreshedAt: null, githubRateLimit: null },
+    });
+    const server = await app();
+    const response = await server.inject({ method: 'GET', url: '/api/homepage' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: { breaking: 1, updates: 1, checkFailed: 2 },
+    });
+    expect(response.headers['cache-control']).toBe('no-store');
+    await server.close();
+  });
+
+  it('returns zero Homepage counts for an empty catalog', async () => {
+    vi.mocked(fakeCatalog.list).mockReturnValue({
+      data: [],
+      meta: { refresh: idleRefresh, refreshedAt: null, githubRateLimit: null },
+    });
+    const server = await app();
+    const response = await server.inject({ method: 'GET', url: '/api/homepage' });
+    expect(response.json()).toEqual({
+      data: { breaking: 0, updates: 0, checkFailed: 0 },
+    });
+    await server.close();
+  });
+
   it('returns on-demand container details', async () => {
     const server = await app();
     const response = await server.inject({

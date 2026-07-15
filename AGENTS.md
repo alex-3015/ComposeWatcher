@@ -49,6 +49,7 @@ Global refreshes coalesce. Repository changes enrich only one container. Shutdow
 
 - `GET /api/health`: I/O-free liveness
 - `GET /api/containers`: lean `ContainerSummary[]` and refresh metadata
+- `GET /api/homepage`: aggregate counts for the Homepage `customapi` widget
 - `GET /api/containers/:id`: on-demand `ContainerDetail`
 - `POST /api/refresh`: immediate HTTP 202
 - `PUT /api/containers/:id/repository`: immediate summary and targeted check, HTTP 202

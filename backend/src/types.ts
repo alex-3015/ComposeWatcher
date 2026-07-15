@@ -19,6 +19,8 @@ export type {
   ContainersResponse,
   DataState,
   GithubRateLimit,
+  HomepageWidgetData,
+  HomepageWidgetResponse,
   RefreshMeta,
   UpdateKind,
 } from '@composewatcher/contracts';
