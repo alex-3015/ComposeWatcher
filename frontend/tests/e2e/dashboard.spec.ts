@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ context }, testInfo) => {
+  await context.setExtraHTTPHeaders({
+    'x-composewatcher-mock-session': `${testInfo.project.name}:${testInfo.testId}:${testInfo.retry}`,
+  });
+});
+
 test('dashboard filters action states and opens lazy release details', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Compose Watcher' })).toBeVisible();
@@ -77,7 +83,7 @@ test('compact view explains unavailable comparisons and repository actions', asy
     .getByRole('article')
     .filter({ has: page.getByRole('heading', { name: 'portainer' }) });
   const notComparable = portainerRow.getByText('Not comparable', { exact: true });
-  await expect(notComparable.first()).toBeVisible();
+  await expect(notComparable.filter({ visible: true }).first()).toBeVisible();
   if (mobile) {
     await expect(
       portainerRow.getByText('The rolling tag "latest" does not identify a comparable version.'),

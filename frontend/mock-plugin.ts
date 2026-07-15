@@ -7,10 +7,30 @@ export function mockApiPlugin(): Plugin {
     apply: 'serve',
     async configureServer(server) {
       const { mockContainers, mockContainerDetails } = await import('./src/mocks/data.ts');
-      const containers = mockContainers.map((container) => ({ ...container }));
-      let details = mockContainerDetails.map((detail) => ({ ...detail }));
-      let refreshRunning = false;
+      function createState() {
+        return {
+          containers: mockContainers.map((container) => ({ ...container })),
+          details: mockContainerDetails.map((detail) => ({ ...detail })),
+          refreshRunning: false,
+        };
+      }
+
+      type MockApiState = ReturnType<typeof createState>;
+
+      const sharedState = createState();
+      const isolatedStates = new Map<string, MockApiState>();
       const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 150));
+
+      function stateFor(request: IncomingMessage): MockApiState {
+        const header = request.headers['x-composewatcher-mock-session'];
+        const sessionId = Array.isArray(header) ? header[0] : header;
+        if (!sessionId) return sharedState;
+        const current = isolatedStates.get(sessionId);
+        if (current) return current;
+        const created = createState();
+        isolatedStates.set(sessionId, created);
+        return created;
+      }
 
       function json(response: ServerResponse, data: unknown, status = 200): void {
         response.statusCode = status;
@@ -18,13 +38,13 @@ export function mockApiPlugin(): Plugin {
         response.end(JSON.stringify(data));
       }
 
-      function refreshMeta() {
+      function refreshMeta(state: MockApiState) {
         return {
-          state: refreshRunning ? ('running' as const) : ('idle' as const),
-          scope: refreshRunning ? ('all' as const) : null,
+          state: state.refreshRunning ? ('running' as const) : ('idle' as const),
+          scope: state.refreshRunning ? ('all' as const) : null,
           containerId: null,
-          startedAt: refreshRunning ? new Date().toISOString() : null,
-          finishedAt: refreshRunning ? null : new Date().toISOString(),
+          startedAt: state.refreshRunning ? new Date().toISOString() : null,
+          finishedAt: state.refreshRunning ? null : new Date().toISOString(),
           error: null,
         };
       }
@@ -39,6 +59,7 @@ export function mockApiPlugin(): Plugin {
 
       server.middlewares.use(async (request, response, next) => {
         const url = request.url ?? '';
+        const state = stateFor(request);
         if (request.method === 'GET' && url.startsWith('/icons/')) {
           response.statusCode = 404;
           return response.end();
@@ -47,9 +68,9 @@ export function mockApiPlugin(): Plugin {
         if (request.method === 'GET' && url === '/api/containers') {
           await delay();
           return json(response, {
-            data: containers,
+            data: state.containers,
             meta: {
-              refresh: refreshMeta(),
+              refresh: refreshMeta(state),
               refreshedAt: new Date().toISOString(),
               githubRateLimit: {
                 limit: 5000,
@@ -62,16 +83,16 @@ export function mockApiPlugin(): Plugin {
         }
 
         if (request.method === 'POST' && url === '/api/refresh') {
-          refreshRunning = true;
-          setTimeout(() => (refreshRunning = false), 800);
-          return json(response, { data: refreshMeta() }, 202);
+          state.refreshRunning = true;
+          setTimeout(() => (state.refreshRunning = false), 800);
+          return json(response, { data: refreshMeta(state) }, 202);
         }
 
         const detailMatch = url.match(/^\/api\/containers\/([^/]+)$/);
         if (request.method === 'GET' && detailMatch) {
           await delay();
           const id = decodeURIComponent(detailMatch[1]);
-          const detail = details.find((candidate) => candidate.id === id);
+          const detail = state.details.find((candidate) => candidate.id === id);
           return detail
             ? json(response, { data: detail })
             : json(
@@ -85,7 +106,7 @@ export function mockApiPlugin(): Plugin {
         if (request.method === 'PUT' && repositoryMatch) {
           const id = decodeURIComponent(repositoryMatch[1]);
           const { repo } = JSON.parse(await readBody(request)) as { repo: string | null };
-          const index = containers.findIndex((candidate) => candidate.id === id);
+          const index = state.containers.findIndex((candidate) => candidate.id === id);
           if (index < 0) {
             return json(
               response,
@@ -94,13 +115,13 @@ export function mockApiPlugin(): Plugin {
             );
           }
           const updated = {
-            ...containers[index],
+            ...state.containers[index],
             githubRepo: repo,
             status: repo ? ('unknown' as const) : ('no-repo' as const),
             dataState: repo ? ('pending' as const) : ('unlinked' as const),
           };
-          containers[index] = updated;
-          details = details.map((detail) =>
+          state.containers[index] = updated;
+          state.details = state.details.map((detail) =>
             detail.id === id
               ? { ...detail, ...updated, breakingChanges: detail.breakingChanges }
               : detail,
@@ -111,7 +132,7 @@ export function mockApiPlugin(): Plugin {
               data: updated,
               meta: {
                 refresh: {
-                  ...refreshMeta(),
+                  ...refreshMeta(state),
                   state: repo ? 'running' : 'idle',
                   scope: repo ? 'container' : null,
                   containerId: repo ? id : null,
